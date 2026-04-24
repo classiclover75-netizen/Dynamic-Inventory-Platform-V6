@@ -391,6 +391,8 @@ function AppContent() {
     toast('Export started. Check your downloads.');
   };
 
+  const [importProgress, setImportProgress] = useState('Processing...');
+
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -404,30 +406,25 @@ function AppContent() {
     }
 
     setIsImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const parsed = JSON.parse(e.target?.result as string);
-        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.pages)) {
-          // Ensure activePage is set if pages exist
-          if (parsed.pages.length > 0 && !parsed.activePage) {
-            parsed.activePage = parsed.pages[0];
-          }
+    setImportProgress('Starting import...');
+    
+    // Create worker dynamically
+    const worker = new Worker(new URL('./importWorker.ts', import.meta.url), { type: 'module' });
+    
+    worker.onmessage = async (e) => {
+      const { type, message, error } = e.data;
+      
+      if (type === 'progress') {
+        setImportProgress(message);
+      } else if (type === 'success') {
+        setImportProgress('Syncing with server...');
+        try {
+          const { openDB } = await import('idb');
+          const db = await openDB('InventoryImportDB', 1);
+          const parsed = await db.get('import_buffer', 'latest_import');
           
-          // Ensure globalCopyBoxes is present and enabled by default if missing
-          if (!parsed.globalCopyBoxes) {
-            parsed.globalCopyBoxes = {
-              enabled: true,
-              box1: { sourcePage: '', sourceColumn: '' },
-              box2: { sourcePage: '', sourceColumn: '' },
-              separator: '-',
-              order: ['box1', 'box2', 'box3']
-            };
-          } else if (typeof parsed.globalCopyBoxes.enabled !== 'boolean') {
-            parsed.globalCopyBoxes.enabled = true;
-          }
+          if (!parsed) throw new Error("Could not read from IndexedDB buffer");
 
-          // Sync imported data to backend via bulk sync
           const response = await fetch('/api/state', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -436,26 +433,30 @@ function AppContent() {
 
           if (response.ok) {
             toast('Data imported successfully');
+            await db.delete('import_buffer', 'latest_import');
             setTimeout(() => window.location.reload(), 1000);
           } else {
             toast('Failed to sync with server');
             setIsImporting(false);
           }
-        } else {
-          toast('Invalid backup file format');
+        } catch (err) {
+          console.error("Sync error:", err);
+          toast('Error during server sync');
           setIsImporting(false);
+        } finally {
+          worker.terminate();
+          if (fileInputRef.current) fileInputRef.current.value = '';
         }
-      } catch (error) {
-        console.error("Import error:", error);
-        toast('Error reading backup file');
+      } else if (type === 'error') {
+        console.error("Worker error:", error);
+        toast(error || 'Error analyzing backup file');
         setIsImporting(false);
-      } finally {
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+        worker.terminate();
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
-    reader.readAsText(file);
+
+    worker.postMessage({ file });
   };
 
   useEffect(() => {
@@ -2274,7 +2275,7 @@ function AppContent() {
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <h2 className="text-2xl font-bold text-gray-800 mb-2">Processing...</h2>
             <p className="text-gray-500 text-center mb-4">
-              We are uploading and processing your backup file. This may take a few minutes for large files.
+              {importProgress}
             </p>
             <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
               <div className="bg-blue-500 h-full animate-[shimmer_2s_infinite]"></div>
