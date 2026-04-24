@@ -79,8 +79,10 @@ async function saveLocalDB(data: any) {
 }
 
 // Image Helpers
-function processRowImages(row: any) {
+async function processRowImages(row: any) {
   const newRow = { ...row };
+  const writePromises: Promise<void>[] = [];
+
   for (const key in newRow) {
     const value = newRow[key];
     let base64String = null;
@@ -99,14 +101,31 @@ function processRowImages(row: any) {
         const base64Data = parts[1];
         const filename = `${uuidv4()}.${ext}`;
         const filepath = path.join(UPLOADS_DIR, filename);
-        fs.writeFileSync(filepath, base64Data, 'base64');
-        newRow[key] = filename;
+        
+        writePromises.push(
+          fs.promises.writeFile(filepath, base64Data, 'base64').then(() => {
+            newRow[key] = filename;
+          }).catch(err => {
+            console.error(`Failed to write image ${filename}:`, err);
+          })
+        );
       } catch (err) {
         console.error("Failed to process image:", err);
       }
     }
   }
+  await Promise.all(writePromises);
   return newRow;
+}
+
+async function processRowsConcurrently(rows: any[], limit = 50) {
+  const results = [];
+  for (let i = 0; i < rows.length; i += limit) {
+    const chunk = rows.slice(i, i + limit);
+    const chunkResults = await Promise.all(chunk.map(processRowImages));
+    results.push(...chunkResults);
+  }
+  return results;
 }
 
 function cleanupOrphanImages(oldRows: any[], newRows: any[]) {
@@ -388,7 +407,7 @@ app.put('/api/pageRows/:name', async (req, res) => {
     if (isUsingMongoDB) {
       const oldPageRows = await PageRow.find({ pageName: name });
       const oldRows = oldPageRows.map(r => r.data);
-      const newRows = (rows || []).map(processRowImages);
+      const newRows = await processRowsConcurrently(rows || []);
       
       cleanupOrphanImages(oldRows, newRows);
       
@@ -401,7 +420,7 @@ app.put('/api/pageRows/:name', async (req, res) => {
       const page = db.pages.find((p: any) => p.name === name);
       if (page) {
         const oldRows = page.rows || [];
-        const newRows = (rows || []).map(processRowImages);
+        const newRows = await processRowsConcurrently(rows || []);
         cleanupOrphanImages(oldRows, newRows);
         page.rows = newRows;
       }
@@ -437,7 +456,7 @@ app.put('/api/state', async (req, res) => {
     const processedPageRows: Record<string, any[]> = {};
     if (newState.pageRows) {
       for (const pageName in newState.pageRows) {
-        processedPageRows[pageName] = newState.pageRows[pageName].map(processRowImages);
+        processedPageRows[pageName] = await processRowsConcurrently(newState.pageRows[pageName]);
       }
     }
 

@@ -391,7 +391,7 @@ function AppContent() {
     toast('Export started. Check your downloads.');
   };
 
-  const [importProgress, setImportProgress] = useState('Processing...');
+  const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -406,7 +406,7 @@ function AppContent() {
     }
 
     setIsImporting(true);
-    setImportProgress('Starting import...');
+    setImportProgress({ message: 'Starting import...', percent: 0 });
     
     // Create worker dynamically
     const worker = new Worker(new URL('./importWorker.ts', import.meta.url), { type: 'module' });
@@ -415,9 +415,9 @@ function AppContent() {
       const { type, message, error } = e.data;
       
       if (type === 'progress') {
-        setImportProgress(message);
+        setImportProgress({ message: message, percent: e.data.percent !== undefined ? e.data.percent : null });
       } else if (type === 'success') {
-        setImportProgress('Syncing with server...');
+        setImportProgress({ message: 'Syncing with server...', percent: 100 });
         try {
           const { openDB } = await import('idb');
           const db = await openDB('InventoryImportDB', 1);
@@ -434,6 +434,7 @@ function AppContent() {
           if (response.ok) {
             toast('Data imported successfully');
             await db.delete('import_buffer', 'latest_import');
+            db.close();
             setTimeout(() => window.location.reload(), 1000);
           } else {
             toast('Failed to sync with server');
@@ -2273,12 +2274,21 @@ function AppContent() {
         <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm text-white">
           <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Processing...</h2>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">
+              Processing... {importProgress.percent !== null && `${importProgress.percent}%`}
+            </h2>
             <p className="text-gray-500 text-center mb-4">
-              {importProgress}
+              {importProgress.message}
             </p>
             <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-blue-500 h-full animate-[shimmer_2s_infinite]"></div>
+              {importProgress.percent !== null ? (
+                <div 
+                  className="bg-blue-500 h-full transition-all duration-300" 
+                  style={{ width: `${importProgress.percent}%` }}
+                ></div>
+              ) : (
+                <div className="bg-blue-500 h-full animate-[shimmer_2s_infinite]"></div>
+              )}
             </div>
             <p className="mt-4 text-xs text-amber-600 font-medium bg-amber-50 px-3 py-1 rounded-full">
               Please do not close this window
