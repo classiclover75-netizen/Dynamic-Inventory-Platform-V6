@@ -41,6 +41,16 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
     setLocalRows(rows);
   }, [rows]);
 
+  const decodeHtmlEntities = (text: string) => {
+    if (!text) return text;
+    return String(text)
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/g, "'");
+  };
+
   const exportColumns = useMemo(() => columns.filter(c => c.key !== 'sr'), [columns]);
 
   const highlightText = (text: string, query: string) => {
@@ -169,7 +179,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
     };
     
     div.childNodes.forEach(child => processNode(child));
-    return richText.length > 0 ? richText : [{ text: html }];
+    return richText.length > 0 ? richText : [{ text: decodeHtmlEntities(html) }];
   };
 
   const handleExport = async () => {
@@ -229,7 +239,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
             if (typeof val === 'string' && /<[a-z][\s\S]*>/i.test(val)) {
               rowValues[col.key] = { richText: parseHtmlToRichText(val) };
             } else {
-              rowValues[col.key] = val;
+              rowValues[col.key] = typeof val === 'string' ? decodeHtmlEntities(val) : val;
             }
           }
         });

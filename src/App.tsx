@@ -32,6 +32,16 @@ const initialConfig: PageConfig = {
   ]
 };
 
+const decodeHtmlEntities = (text: string) => {
+  if (!text) return text;
+  return String(text)
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
+};
+
 function AppContent() {
   const [state, setState] = useState<AppState>({
     pages: [],
@@ -1068,7 +1078,7 @@ function AppContent() {
           if (col.key === 'sr' || col.type === 'image' || col.type === 'file') return null;
           const val = row[col.key];
           const strVal = Array.isArray(val) ? val.join(' ') : (val !== null && val !== undefined ? String(val) : '');
-          const cleanVal = strVal.replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ').toLowerCase();
+          const cleanVal = decodeHtmlEntities(strVal).replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ').toLowerCase();
           return { name: col.name.toLowerCase(), val: cleanVal };
         }).filter(Boolean) as {name: string, val: string}[];
 
@@ -1130,7 +1140,7 @@ function AppContent() {
           if (col.key === 'sr' || col.type === 'image' || col.type === 'file') return null;
           const val = row[col.key];
           const strVal = Array.isArray(val) ? val.join(' ') : (val !== null && val !== undefined ? String(val) : '');
-          const cleanVal = strVal.replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ').toLowerCase();
+          const cleanVal = decodeHtmlEntities(strVal).replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ').toLowerCase();
           return { name: col.name.toLowerCase(), val: cleanVal };
         }).filter(Boolean) as {name: string, val: string}[];
 
@@ -1178,8 +1188,9 @@ function AppContent() {
     return sortRows(rows, secConfig.columns);
   }, [state.pageRows, state.pageConfigs, activeConfig.secondarySearchPage, secondarySearchQuery, secondarySearchTags]);
 
-    const highlightText = (text: string, tokens: string[], isGhost: boolean = false) => {
-      const cleanText = text ? text.replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ') : '';
+    const highlightText = (text: any, tokens: string[], isGhost: boolean = false) => {
+      const strText = decodeHtmlEntities(String(text || ''));
+      const cleanText = strText ? strText.replace(/<!--[\s\S]*?-->/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ') : '';
       if (!tokens || tokens.length === 0 || !cleanText) return cleanText;
       
       const escapedStrings = tokens.map(t => {
@@ -1210,7 +1221,8 @@ function AppContent() {
     };
 
     const highlightHtmlText = (htmlString: string, tokens: string[], isGhost: boolean = false) => {
-      const cleanHtml = htmlString ? htmlString.replace(/<!--[\s\S]*?-->/g, '').replace(/&nbsp;/gi, ' ') : '';
+      const decodedHtml = decodeHtmlEntities(htmlString);
+      const cleanHtml = decodedHtml ? decodedHtml.replace(/<!--[\s\S]*?-->/g, '').replace(/&nbsp;/gi, ' ') : '';
       if (!tokens || tokens.length === 0 || !cleanHtml) return cleanHtml;
       const escapedStrings = tokens.map(t => {
         const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1563,7 +1575,7 @@ function AppContent() {
                                       {items.map((item, i) => {
                                         const hideButton = item.startsWith('!');
                                         let displayText = hideButton ? item.slice(1) : item;
-                                        displayText = displayText.replace(/<!--[\s\S]*?-->/g, '').replace(/&nbsp;/gi, ' ');
+                                        displayText = decodeHtmlEntities(displayText).replace(/<!--[\s\S]*?-->/g, '').replace(/&nbsp;/gi, ' ');
                                         const itemId = `${row.id}-${col.key}-${i}`;
                                         const hasHtml = /<[a-z][\s\S]*>/i.test(displayText);
                                         return (
