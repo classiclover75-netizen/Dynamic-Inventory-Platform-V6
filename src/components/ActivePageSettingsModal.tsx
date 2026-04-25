@@ -22,6 +22,7 @@ export const ActivePageSettingsModal = ({
   onExportExcel,
   onFindDuplicates,
   onClearPageData,
+  onCreateTracker,
   existingPages,
   setConfirmationModal
 }: {
@@ -40,6 +41,7 @@ export const ActivePageSettingsModal = ({
   onExportExcel: () => void;
   onFindDuplicates: () => void;
   onClearPageData: () => void;
+  onCreateTracker?: (sourcePage: string) => void;
   existingPages: string[];
   setConfirmationModal: (modal: { isOpen: boolean, title?: string, message?: string, onConfirm: () => void } | null) => void;
 }) => {
@@ -253,6 +255,17 @@ export const ActivePageSettingsModal = ({
           When enabled, typing in one search bar will not clear the text in the other search bar.
         </div>
       </div>
+
+      {!pageConfig?.isTrackerPage && onCreateTracker && (
+        <div className="mt-4 border-t border-[#eceff1] pt-3 mb-3">
+          <div className="text-[11px] font-bold text-[#217346] mb-1.5 uppercase tracking-wide flex items-center gap-1">📦 Smart Inventory Tracker</div>
+          <p className="text-[11px] text-gray-600 mb-2 leading-tight">Create a linked Live Tracker page to automatically manage initial stock, daily sales, and live remaining balance for this list.</p>
+          <Button variant="green" className="w-full text-xs py-1.5" onClick={() => { onCreateTracker(activePage); onClose(); }}>
+             ⚡ Create Linked Live Tracker
+          </Button>
+        </div>
+      )}
+
       <div className="border border-gray-200 rounded-md p-2.5 bg-gray-50">
         <div className="flex gap-2 mb-2">
           <Button variant="blue" className="flex-1 justify-center" onClick={onCreateColumn}><Plus size={14} /> Create Column</Button>

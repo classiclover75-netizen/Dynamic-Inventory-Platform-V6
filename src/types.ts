@@ -11,7 +11,8 @@ export type ColumnType =
   | 'relation' 
   | 'multi_text' 
   | 'text_with_copy_button' 
-  | 'system_serial';
+  | 'system_serial'
+  | 'sale_tracker';
 
 export interface Column {
   key: string;
@@ -38,6 +39,9 @@ export interface PageConfig {
   searchBarOrder?: ('primary' | 'secondary')[];
   rowHeight?: number;
   independentSearchBars?: boolean;
+  linkedSourcePage?: string;
+  isTrackerPage?: boolean;
+  minStockAlert?: number;
 }
 
 export interface RowData {

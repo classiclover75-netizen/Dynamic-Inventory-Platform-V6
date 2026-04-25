@@ -402,6 +402,8 @@ function AppContent() {
   };
 
   const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
+  const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero'>('all');
+  const [inlineEdit, setInlineEdit] = useState<{id: string, colKey: string, val: string} | null>(null);
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -635,6 +637,180 @@ function AppContent() {
 
   const activeConfig = state.pageConfigs[state.activePage] || initialConfig;
   const activeRows = state.pageRows[state.activePage] || [];
+
+  const handleCreateTracker = async (sourcePage: string) => {
+    const trackerName = `${sourcePage} - Live Tracker`;
+    
+    // Config creation
+    const trackerConfig: PageConfig = {
+      isTrackerPage: true,
+      linkedSourcePage: sourcePage,
+      minStockAlert: 5,
+      rowReorderEnabled: false,
+      hoverPreviewEnabled: false,
+      columns: [
+        { key: 'sr', name: 'Row No.', type: 'system_serial', locked: true, movable: false },
+        { key: 'item_name', name: 'Product Name', type: 'text' },
+        { key: 'total_qty', name: 'Total Qty', type: 'number' },
+        { key: 'remaining_qty', name: 'Remaining Qty', type: 'number', locked: true }
+      ]
+    };
+
+    // Row mapping
+    const sourceRows = state.pageRows[sourcePage] || [];
+    const newRows: RowData[] = sourceRows.map(row => {
+      // Find the best text column for an item name, or default
+      const textCols = state.pageConfigs[sourcePage]?.columns.filter(c => c.type === 'text') || [];
+      const itemNameKey = textCols.length > 0 ? textCols[0].key : Object.keys(row).find(k => typeof row[k] === 'string' && k !== 'id') || 'id';
+      
+      return {
+        id: row.id,
+        item_name: row[itemNameKey] || `Item ${row.id}`,
+        total_qty: '0'
+      };
+    });
+
+    try {
+      const response = await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trackerName })
+      });
+
+      if (response.ok) {
+        const batchSave = async () => {
+          await fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: trackerConfig })
+          });
+          
+          await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: newRows })
+          });
+        };
+        
+        await batchSave();
+
+        setState(prev => ({
+          ...prev,
+          pages: [...prev.pages, trackerName],
+          activePage: trackerName,
+          pageConfigs: {
+            ...prev.pageConfigs,
+            [trackerName]: trackerConfig
+          },
+          pageRows: {
+            ...prev.pageRows,
+            [trackerName]: newRows
+          }
+        }));
+        
+        toast(`Tracker '${trackerName}' created successfully`);
+      } else {
+        const data = await response.json();
+        toast(data.error || 'Failed to create tracker page');
+      }
+    } catch (err) {
+      console.error(err);
+      toast('Error creating tracker page');
+    }
+  };
+
+  const handleSyncTracker = async (trackerName: string) => {
+    const config = state.pageConfigs[trackerName];
+    if (!config || !config.linkedSourcePage) return;
+    const sourceRows = state.pageRows[config.linkedSourcePage] || [];
+    const trackerRows = state.pageRows[trackerName] || [];
+    const trackerKeys = new Set(trackerRows.map(r => r.id));
+
+    const newRowsToAppend: RowData[] = [];
+    sourceRows.forEach(row => {
+      if (!trackerKeys.has(row.id)) {
+        const textCols = state.pageConfigs[config.linkedSourcePage!]?.columns.filter(c => c.type === 'text') || [];
+        const itemNameKey = textCols.length > 0 ? textCols[0].key : Object.keys(row).find(k => typeof row[k] === 'string' && k !== 'id') || 'id';
+        newRowsToAppend.push({
+          id: row.id,
+          item_name: row[itemNameKey] || `Item ${row.id}`,
+          total_qty: '0'
+        });
+      }
+    });
+
+    if (newRowsToAppend.length > 0) {
+      const updatedRows = [...trackerRows, ...newRowsToAppend];
+      try {
+        await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: updatedRows })
+        });
+        setState(prev => ({
+          ...prev,
+          pageRows: {
+            ...prev.pageRows,
+            [trackerName]: updatedRows
+          }
+        }));
+        toast(`Synced ${newRowsToAppend.length} new items`);
+      } catch (e) {
+        toast('Failed to sync new items');
+      }
+    } else {
+      toast('Tracker is already up to date');
+    }
+  };
+
+  const handleAddSaleCol = (trackerName: string) => {
+    const config = state.pageConfigs[trackerName];
+    if (!config) return;
+    const d = new Date();
+    const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const newCol: Column = { key: 'sale_' + Date.now(), name: 'Sale ' + dateStr, type: 'sale_tracker' };
+    
+    // Check if handleCreateColumn exists or handleSaveActivePageSettings
+    // Wait, the handleCreateColumn exists maybe, or I can just update the config.
+    const newConfig = { ...config, columns: [...config.columns, newCol] };
+    
+    fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: newConfig })
+    }).then(() => {
+      setState(prev => ({
+        ...prev,
+        pageConfigs: {
+          ...prev.pageConfigs,
+          [trackerName]: newConfig
+        }
+      }));
+      toast(`Added column for Today's Sale`);
+    }).catch(() => toast('Failed to add sale column'));
+  };
+
+  const handleSaveInlineEdit = async (pageName: string, rowId: string, colKey: string, val: string) => {
+    const updatedRows = [...(state.pageRows[pageName] || [])];
+    const idx = updatedRows.findIndex(r => r.id === rowId);
+    if (idx >= 0) {
+      updatedRows[idx] = { ...updatedRows[idx], [colKey]: val };
+      setState(prev => ({
+        ...prev,
+        pageRows: { ...prev.pageRows, [pageName]: updatedRows }
+      }));
+      try {
+        await fetch(`/api/pageRows/${encodeURIComponent(pageName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: updatedRows })
+        });
+      } catch (e) {
+        toast('Failed to save inline edit');
+      }
+    }
+    setInlineEdit(null);
+  };
 
   const handleCreatePage = async (name: string, columns: Column[]) => {
     const newConfig = {
@@ -1123,8 +1299,24 @@ function AppContent() {
         });
       });
     }
+    if (activeConfig.isTrackerPage && trackerFilter !== 'all') {
+      rows = rows.filter(row => {
+        const total = parseFloat(String(row.total_qty || 0));
+        const totalSales = activeConfig.columns.filter(c => c.type === 'sale_tracker').reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
+        const remaining = total - totalSales;
+        const minStock = activeConfig.minStockAlert || 5;
+
+        if (trackerFilter === 'low') {
+          return remaining <= minStock;
+        } else if (trackerFilter === 'zero') {
+          return totalSales === 0;
+        }
+        return true;
+      });
+    }
+
     return sortRows(rows, activeConfig.columns);
-  }, [activeRows, currentSearch, primarySearchTags, activeConfig.columns]);
+  }, [activeRows, currentSearch, primarySearchTags, activeConfig.columns, activeConfig.isTrackerPage, activeConfig.minStockAlert, trackerFilter]);
 
   const secondaryFilteredRows = useMemo(() => {
     if (!activeConfig.secondarySearchPage) return [];
@@ -1185,8 +1377,24 @@ function AppContent() {
         });
       });
     }
+    if (secConfig.isTrackerPage && trackerFilter !== 'all') {
+      rows = rows.filter(row => {
+        const total = parseFloat(String(row.total_qty || 0));
+        const totalSales = secConfig.columns.filter(c => c.type === 'sale_tracker').reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
+        const remaining = total - totalSales;
+        const minStock = secConfig.minStockAlert || 5;
+
+        if (trackerFilter === 'low') {
+          return remaining <= minStock;
+        } else if (trackerFilter === 'zero') {
+          return totalSales === 0;
+        }
+        return true;
+      });
+    }
+
     return sortRows(rows, secConfig.columns);
-  }, [state.pageRows, state.pageConfigs, activeConfig.secondarySearchPage, secondarySearchQuery, secondarySearchTags]);
+  }, [state.pageRows, state.pageConfigs, activeConfig.secondarySearchPage, secondarySearchQuery, secondarySearchTags, trackerFilter]);
 
     const highlightText = (text: any, tokens: string[], isGhost: boolean = false) => {
       const strText = decodeHtmlEntities(String(text || ''));
@@ -1620,6 +1828,49 @@ function AppContent() {
                               );
                             }
 
+                            if (config.isTrackerPage) {
+                              if (col.key === 'remaining_qty') {
+                                const total = parseFloat(String(row.total_qty || 0));
+                                const totalSales = config.columns.filter(c => c.type === 'sale_tracker').reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
+                                const remaining = total - totalSales;
+                                const minStock = config.minStockAlert || 5;
+                                
+                                let stateClass = hoverClass;
+                                if (remaining < 0) stateClass = "bg-red-200 text-red-900 font-bold";
+                                else if (remaining <= minStock) stateClass = "bg-red-50 text-red-900 font-bold";
+
+                                return (
+                                  <td key={col.key} {...commonProps} className={`p-1.5 border-r-[length:medium] border-b-[length:medium] border-[#e0e0e0] overflow-hidden whitespace-pre-wrap ${stateClass}`}>
+                                    {remaining}
+                                  </td>
+                                );
+                              }
+
+                              if (col.type === 'sale_tracker') {
+                                const isEditing = inlineEdit?.id === `${row.id}-${col.key}`;
+                                return (
+                                  <td key={col.key} {...commonProps} className={`p-1.5 border-r-[length:medium] border-b-[length:medium] border-[#e0e0e0] ${hoverClass} overflow-hidden align-top text-xs`}>
+                                    {isEditing ? (
+                                      <input 
+                                        type="number" 
+                                        autoFocus 
+                                        value={inlineEdit.val} 
+                                        onChange={(e) => setInlineEdit({...inlineEdit, val: e.target.value})}
+                                        onBlur={() => handleSaveInlineEdit(activePage!, row.id, col.key, inlineEdit.val)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(activePage!, row.id, col.key, inlineEdit.val); }}
+                                        className="w-full p-1 border-2 border-blue-500 rounded text-xs" 
+                                      />
+                                    ) : (
+                                      <div className="group flex items-center justify-between w-full h-full relative cursor-text min-h-[20px]" onClick={() => setInlineEdit({id: `${row.id}-${col.key}`, colKey: col.key, val: String(rawVal || 0)})}>
+                                        <span>{rawVal || '0'}</span>
+                                        <button className="hidden group-hover:block absolute right-0 text-gray-400 hover:text-blue-500 text-[10px]">✏️</button>
+                                      </div>
+                                    )}
+                                  </td>
+                                );
+                              }
+                            }
+
                             if (Array.isArray(rawVal)) {
                               return (
                                 <td key={col.key} {...commonProps} className={`p-1.5 border-r-[length:medium] border-b-[length:medium] border-[#e0e0e0] ${hoverClass} overflow-hidden`}>
@@ -1673,6 +1924,17 @@ function AppContent() {
       {isSecondaryActive && (
         <div className="bg-[#e8edf2] px-3 py-1.5 text-sm font-bold text-[#2b579a] border-y border-[#d8d8d8]">
           Viewing Secondary Data: {activeConfig.secondarySearchPage}
+        </div>
+      )}
+      {displayConfig.isTrackerPage && (
+        <div className="bg-[#e8f5e9] border-y border-[#c8e6c9] px-3 py-2 flex items-center gap-2">
+          <Button variant="green" className="text-xs py-1" onClick={() => handleAddSaleCol(state.activePage)}>+ Add Today's Sale</Button>
+          <div className="border-l border-gray-300 h-4 mx-1"></div>
+          <Button variant={trackerFilter === 'low' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('low')}>🚨 Low Stock</Button>
+          <Button variant={trackerFilter === 'zero' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('zero')}>Show 0 Sale</Button>
+          <Button variant={trackerFilter === 'all' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('all')}>Clear Filters</Button>
+          <div className="flex-1"></div>
+          <Button variant="blue" className="text-xs py-1" onClick={() => handleSyncTracker(state.activePage)}>🔄 Sync New Items</Button>
         </div>
       )}
       {(() => {
@@ -2005,6 +2267,7 @@ function AppContent() {
         onClearPageData={() => handleClearPageData(state.activePage)}
         existingPages={state.pages}
         setConfirmationModal={setConfirmationModal}
+        onCreateTracker={handleCreateTracker}
       />
 
       <RenamePageModal 
