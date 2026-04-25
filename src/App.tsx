@@ -786,7 +786,18 @@ function AppContent() {
     if (!customSaleName.trim()) return;
     const newColKey = 'sale_' + Date.now();
     const newCol = { key: newColKey, name: customSaleName, type: 'sale_tracker' as const };
-    const updatedConfig = { ...activeConfig, columns: [...activeConfig.columns, newCol] };
+    
+    // Find where to insert the new column (before existing sale columns)
+    const currentColumns = [...activeConfig.columns];
+    const firstSaleIndex = currentColumns.findIndex(c => c.type === 'sale_tracker');
+    
+    if (firstSaleIndex !== -1) {
+      currentColumns.splice(firstSaleIndex, 0, newCol); // Push old columns to the right
+    } else {
+      currentColumns.push(newCol); // If no sale columns exist yet
+    }
+    
+    const updatedConfig = { ...activeConfig, columns: currentColumns };
     
     try {
       await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: updatedConfig }) });
@@ -1405,7 +1416,7 @@ function AppContent() {
     }
     if (activeConfig.isTrackerPage && trackerFilter !== 'all') {
       const saleCols = activeConfig.columns.filter(c => c.type === 'sale_tracker');
-      const latestSaleCol = saleCols.length > 0 ? saleCols[saleCols.length - 1].key : null;
+      const latestSaleCol = saleCols.length > 0 ? saleCols[0].key : null;
       rows = rows.filter(row => {
         const total = parseFloat(String(row.total_qty || 0));
         const totalSales = saleCols.reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
@@ -1491,7 +1502,7 @@ function AppContent() {
     }
     if (secConfig.isTrackerPage && trackerFilter !== 'all') {
       const saleCols = secConfig.columns.filter(c => c.type === 'sale_tracker');
-      const latestSaleCol = saleCols.length > 0 ? saleCols[saleCols.length - 1].key : null;
+      const latestSaleCol = saleCols.length > 0 ? saleCols[0].key : null;
       rows = rows.filter(row => {
         const total = parseFloat(String(row.total_qty || 0));
         const totalSales = saleCols.reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
