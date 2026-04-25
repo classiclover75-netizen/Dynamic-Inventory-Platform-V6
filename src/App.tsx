@@ -42,6 +42,20 @@ const decodeHtmlEntities = (text: string) => {
     .replace(/&#39;/g, "'");
 };
 
+const renderHighlightedText = (text: string, highlight: string) => {
+  if (!highlight.trim()) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() 
+          ? <span key={i} className="bg-yellow-200 text-black px-1 rounded font-bold">{part}</span> 
+          : part
+      )}
+    </>
+  );
+};
+
 function AppContent() {
   const [state, setState] = useState<AppState>({
     pages: [],
@@ -2855,7 +2869,9 @@ function AppContent() {
                 .filter(c => c.type === 'sale_tracker' && c.name.toLowerCase().includes(archiveSearchQuery.toLowerCase()))
                 .map(col => (
                 <div key={col.key} className="flex justify-between items-center p-2.5 border-b border-gray-200 last:border-b-0 bg-white mb-1 rounded shadow-sm hover:bg-gray-50 transition-colors">
-                  <span className="text-sm font-semibold text-gray-700">{col.name}</span>
+                  <span className="text-sm font-semibold text-gray-700">
+                    {renderHighlightedText(col.name, archiveSearchQuery)}
+                  </span>
                   <button 
                     onClick={() => handleToggleColumnArchive(col.key, !!col.archived)}
                     className={`px-3 py-1 rounded text-xs font-bold transition-colors ${col.archived ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
