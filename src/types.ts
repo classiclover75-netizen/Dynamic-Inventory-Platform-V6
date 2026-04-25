@@ -43,6 +43,7 @@ export interface PageConfig {
   linkedSourcePage?: string;
   isTrackerPage?: boolean;
   minStockAlert?: number;
+  showCopyBoxes?: boolean;
 }
 
 export interface RowData {

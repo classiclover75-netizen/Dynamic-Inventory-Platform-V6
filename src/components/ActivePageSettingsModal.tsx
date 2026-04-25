@@ -256,6 +256,19 @@ export const ActivePageSettingsModal = ({
         </div>
       </div>
 
+      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+        <div>
+          <p className="text-sm font-bold text-gray-700">Show Global Copy Boxes</p>
+          <p className="text-[10px] text-gray-500 font-semibold">Enable or disable the 3 copy boxes at the top of this page.</p>
+        </div>
+        <input 
+          type="checkbox" 
+          className="w-5 h-5 cursor-pointer accent-[#2b579a]"
+          checked={pageConfig?.showCopyBoxes !== false} 
+          onChange={(e) => saveConfig({ showCopyBoxes: e.target.checked }, false)}
+        />
+      </div>
+
       {!pageConfig?.isTrackerPage && onCreateTracker && (
         <div className="mt-4 border-t border-[#eceff1] pt-3 mb-3">
           <div className="text-[11px] font-bold text-[#217346] mb-1.5 uppercase tracking-wide flex items-center gap-1">📦 Smart Inventory Tracker</div>

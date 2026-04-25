@@ -2244,7 +2244,7 @@ function AppContent() {
         )}
       </div>
 
-      {state.globalCopyBoxes && !activeConfig.isTrackerPage && (
+      {state.globalCopyBoxes && activeConfig.showCopyBoxes !== false && (
         <GlobalCombinationCopyBoxes 
           settings={state.globalCopyBoxes} 
           box1Value={box1Value} 
