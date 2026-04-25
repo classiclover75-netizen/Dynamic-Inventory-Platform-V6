@@ -407,6 +407,7 @@ function AppContent() {
   const [inlineEdit, setInlineEdit] = useState<{id: string, colKey: string, val: string} | null>(null);
   const [isSalePromptOpen, setIsSalePromptOpen] = useState(false);
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState("");
   const [customSaleName, setCustomSaleName] = useState("");
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -779,6 +780,30 @@ function AppContent() {
     } catch (err) { 
       console.error(err); 
       toast("Failed to update archive status"); 
+    }
+  };
+
+  const handleBulkArchiveToggle = async (hideAll: boolean) => {
+    if (!activeConfig) return;
+    const updatedColumns = activeConfig.columns.map(c => 
+      c.type === 'sale_tracker' ? { ...c, archived: hideAll } : c
+    );
+    const updatedConfig = { ...activeConfig, columns: updatedColumns };
+    
+    try {
+      await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, { 
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ config: updatedConfig }) 
+      });
+      setState(prev => ({ 
+        ...prev, 
+        pageConfigs: { ...prev.pageConfigs, [state.activePage]: updatedConfig } 
+      }));
+      toast(hideAll ? "All sale columns hidden!" : "All sale columns visible!");
+    } catch (err) { 
+      console.error(err); 
+      toast("Failed to update columns"); 
     }
   };
 
@@ -2804,13 +2829,32 @@ function AppContent() {
       {/* --- ARCHIVE COLUMNS MODAL --- */}
       {isArchiveModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg w-[400px] shadow-2xl">
+          <div className="bg-white p-6 rounded-lg w-[450px] shadow-2xl">
             <h3 className="text-lg font-bold mb-1 text-[#2b579a]">Archive Columns</h3>
-            <p className="text-xs text-gray-500 mb-4">Manually hide or show your custom sale date columns.</p>
+            <p className="text-xs text-gray-500 mb-3">Manually hide or show your custom sale date columns.</p>
             
-            <div className="max-h-[300px] overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
-              {activeConfig?.columns.filter(c => c.type === 'sale_tracker').map(col => (
-                <div key={col.key} className="flex justify-between items-center p-2.5 border-b border-gray-200 last:border-b-0 bg-white mb-1 rounded shadow-sm">
+            {/* Search and Bulk Actions */}
+            <div className="mb-3 flex flex-col gap-2">
+              <input 
+                type="text" 
+                autoFocus
+                placeholder="🔍 Search dates or columns..." 
+                className="w-full border-2 border-[#d7dde1] p-2 rounded-md outline-none focus:border-[#2b579a] text-sm font-semibold transition-colors"
+                value={archiveSearchQuery}
+                onChange={(e) => setArchiveSearchQuery(e.target.value)}
+              />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => handleBulkArchiveToggle(false)} className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded text-xs font-bold transition-colors border border-green-200 shadow-sm">👁️ Show All</button>
+                <button onClick={() => handleBulkArchiveToggle(true)} className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded text-xs font-bold transition-colors border border-red-200 shadow-sm">🙈 Hide All</button>
+              </div>
+            </div>
+            
+            {/* Columns List */}
+            <div className="max-h-[300px] overflow-y-auto border-2 border-gray-100 rounded-md p-2 mb-4 bg-gray-50">
+              {activeConfig?.columns
+                .filter(c => c.type === 'sale_tracker' && c.name.toLowerCase().includes(archiveSearchQuery.toLowerCase()))
+                .map(col => (
+                <div key={col.key} className="flex justify-between items-center p-2.5 border-b border-gray-200 last:border-b-0 bg-white mb-1 rounded shadow-sm hover:bg-gray-50 transition-colors">
                   <span className="text-sm font-semibold text-gray-700">{col.name}</span>
                   <button 
                     onClick={() => handleToggleColumnArchive(col.key, !!col.archived)}
@@ -2823,12 +2867,15 @@ function AppContent() {
               {activeConfig?.columns.filter(c => c.type === 'sale_tracker').length === 0 && (
                  <div className="text-sm text-gray-500 text-center p-4 font-semibold">No custom sale columns found yet.</div>
               )}
+              {activeConfig?.columns.filter(c => c.type === 'sale_tracker' && c.name.toLowerCase().includes(archiveSearchQuery.toLowerCase())).length === 0 && archiveSearchQuery !== "" && (
+                 <div className="text-sm text-red-500 text-center p-4 font-semibold">No columns match your search "{archiveSearchQuery}".</div>
+              )}
             </div>
             
             <div className="flex justify-end">
               <button 
-                onClick={() => setIsArchiveModalOpen(false)} 
-                className="px-5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-bold text-sm transition-colors"
+                onClick={() => { setIsArchiveModalOpen(false); setArchiveSearchQuery(""); }} 
+                className="px-5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-bold text-sm transition-colors shadow-sm"
               >
                 Close
               </button>
