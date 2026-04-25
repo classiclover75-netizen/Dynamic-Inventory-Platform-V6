@@ -1437,7 +1437,7 @@ function AppContent() {
             let bStart = '';
             let bEnd = '';
             if (/^[0-9]/.test(t)) {
-              bStart = '(?<![0-9])';
+              bStart = ''; // Removed strict numeric boundary for SKU compatibility
               bEnd = ''; 
             } else if (/^[a-zA-Z]/.test(t)) {
               if (t.length <= 2) {
@@ -1523,7 +1523,7 @@ function AppContent() {
             let bStart = '';
             let bEnd = '';
             if (/^[0-9]/.test(t)) {
-              bStart = '(?<![0-9])';
+              bStart = ''; // Removed strict numeric boundary for SKU compatibility
               bEnd = ''; 
             } else if (/^[a-zA-Z]/.test(t)) {
               if (t.length <= 2) {
@@ -1576,7 +1576,7 @@ function AppContent() {
         let bStart = '';
         let bEnd = '';
         if (/^[0-9]/.test(t)) {
-          bStart = '(?<![0-9])';
+          bStart = ''; // Removed strict numeric boundary for SKU compatibility
           bEnd = '';
         } else if (/^[a-zA-Z]/.test(t)) {
           if (t.length <= 2) {
@@ -1607,7 +1607,7 @@ function AppContent() {
         let bStart = '';
         let bEnd = '';
         if (/^[0-9]/.test(t)) {
-          bStart = '(?<![0-9])';
+          bStart = ''; // Removed strict numeric boundary for SKU compatibility
           bEnd = '';
         } else if (/^[a-zA-Z]/.test(t)) {
           if (t.length <= 2) {
