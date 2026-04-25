@@ -1036,33 +1036,60 @@ function AppContent() {
 
   const handleSaveRows = async (newRows: RowData[], pageName?: string) => {
     const targetPage = pageName || state.activePage;
-    const currentRows = [...(state.pageRows[targetPage] || [])];
-    
-    if (editingRowId) {
-      const idx = currentRows.findIndex(r => r.id === editingRowId);
-      if (idx >= 0) currentRows[idx] = newRows[0];
-      else currentRows.push(newRows[0]);
-    } else {
-      currentRows.push(...newRows);
-    }
+    let updatedRows: RowData[] = [];
 
-    try {
-      await fetch(`/api/pageRows/${encodeURIComponent(targetPage)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: currentRows })
-      });
+    // 1. Foran screen par data update karein (Optimistic UI)
+    setState(prev => {
+      const currentRows = [...(prev.pageRows[targetPage] || [])];
 
-      setState(prev => ({
+      if (editingRowId) {
+        const idx = currentRows.findIndex(r => r.id === editingRowId);
+        if (idx >= 0) currentRows[idx] = newRows[0];
+        else currentRows.push(newRows[0]);
+      } else {
+        currentRows.push(...newRows);
+      }
+      
+      updatedRows = currentRows; // Data copy kar liya API ke liye
+
+      return {
         ...prev,
         pageRows: {
           ...prev.pageRows,
           [targetPage]: currentRows
         }
-      }));
+      };
+    });
+
+    // 2. Search clear karein aur neechay scroll karein
+    if (!editingRowId) {
+      setPrimarySearchInput('');
+      setPrimarySearchTags([]);
       
-      toggleModal('addRow', false);
-      setEditingRowId(null);
+      setTimeout(() => {
+        if (parentRef.current) {
+          parentRef.current.scrollTop = parentRef.current.scrollHeight;
+        }
+      }, 100); 
+    }
+
+    // Modal band karein
+    toggleModal('addRow', false);
+    setEditingRowId(null);
+
+    // 3. 🚨 THE CRITICAL FIX: Database ka PUKKA intezar karein (AWAIT)
+    try {
+      const response = await fetch(`/api/pageRows/${encodeURIComponent(targetPage)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: updatedRows })
+      });
+
+      if (!response.ok) {
+        throw new Error('Database failed to save');
+      }
+
+      // Jab database se OK aa jaye, tabhi success message show karein
       if (returnToImagePreview) {
         toggleModal('imagePreview', true);
         setReturnToImagePreview(false);
@@ -1070,10 +1097,13 @@ function AppContent() {
         toggleModal('activePageSettings', true);
         setReturnToSettings(false);
       }
-      toast(editingRowId ? 'Row updated successfully' : `${newRows.length} row(s) added successfully`);
+      
+      toast(editingRowId ? 'Row updated successfully' : `${newRows.length} row(s) added successfully!`);
+
     } catch (err) {
-      console.error(err);
-      toast('Failed to save rows to database');
+      console.error('Save Error:', err);
+      // Agar database save karne mein fail ho jaye to user ko lal/error alert dein
+      toast('❌ Error saving to database! Please try again.', { style: { background: 'red', color: 'white' } });
     }
   };
 
