@@ -404,6 +404,8 @@ function AppContent() {
   const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
   const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero'>('all');
   const [inlineEdit, setInlineEdit] = useState<{id: string, colKey: string, val: string} | null>(null);
+  const [isSalePromptOpen, setIsSalePromptOpen] = useState(false);
+  const [customSaleName, setCustomSaleName] = useState("");
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -639,36 +641,32 @@ function AppContent() {
   const activeRows = state.pageRows[state.activePage] || [];
 
   const handleCreateTracker = async (sourcePage: string) => {
+    const sourceConfig = state.pageConfigs[sourcePage];
+    const sourceRows = state.pageRows[sourcePage] || [];
+    if (!sourceConfig) return toast("Source page not found!");
+
     const trackerName = `${sourcePage} - Live Tracker`;
     
-    // Config creation
-    const trackerConfig: PageConfig = {
+    // EXACT COPY of ALL columns, appending only Total and Remaining
+    const newColumns = [
+      ...sourceConfig.columns,
+      { key: 'total_qty', name: 'Total Qty', type: 'number' as const },
+      { key: 'remaining_qty', name: 'Remaining Qty', type: 'number' as const, locked: true }
+    ];
+
+    const newConfig: PageConfig = {
+      ...sourceConfig,
       isTrackerPage: true,
       linkedSourcePage: sourcePage,
-      minStockAlert: 5,
-      rowReorderEnabled: false,
-      hoverPreviewEnabled: false,
-      columns: [
-        { key: 'sr', name: 'Row No.', type: 'system_serial', locked: true, movable: false },
-        { key: 'item_name', name: 'Product Name', type: 'text' },
-        { key: 'total_qty', name: 'Total Qty', type: 'number' },
-        { key: 'remaining_qty', name: 'Remaining Qty', type: 'number', locked: true }
-      ]
+      columns: newColumns,
+      minStockAlert: 5
     };
 
-    // Row mapping
-    const sourceRows = state.pageRows[sourcePage] || [];
-    const newRows: RowData[] = sourceRows.map(row => {
-      // Find the best text column for an item name, or default
-      const textCols = state.pageConfigs[sourcePage]?.columns.filter(c => c.type === 'text') || [];
-      const itemNameKey = textCols.length > 0 ? textCols[0].key : Object.keys(row).find(k => typeof row[k] === 'string' && k !== 'id') || 'id';
-      
-      return {
-        id: row.id,
-        item_name: row[itemNameKey] || `Item ${row.id}`,
-        total_qty: '0'
-      };
-    });
+    // EXACT COPY of ALL row data, setting total_qty to '0'
+    const newRows = sourceRows.map(row => ({
+      ...row,
+      total_qty: '0' 
+    }));
 
     try {
       const response = await fetch('/api/pages', {
@@ -678,21 +676,17 @@ function AppContent() {
       });
 
       if (response.ok) {
-        const batchSave = async () => {
-          await fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: trackerConfig })
-          });
-          
-          await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows: newRows })
-          });
-        };
+        await fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: newConfig })
+        });
         
-        await batchSave();
+        await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: newRows })
+        });
 
         setState(prev => ({
           ...prev,
@@ -700,7 +694,7 @@ function AppContent() {
           activePage: trackerName,
           pageConfigs: {
             ...prev.pageConfigs,
-            [trackerName]: trackerConfig
+            [trackerName]: newConfig
           },
           pageRows: {
             ...prev.pageRows,
@@ -708,7 +702,7 @@ function AppContent() {
           }
         }));
         
-        toast(`Tracker '${trackerName}' created successfully`);
+        toast(`Tracker "${trackerName}" created with ALL columns!`);
       } else {
         const data = await response.json();
         toast(data.error || 'Failed to create tracker page');
@@ -763,31 +757,19 @@ function AppContent() {
     }
   };
 
-  const handleAddSaleCol = (trackerName: string) => {
-    const config = state.pageConfigs[trackerName];
-    if (!config) return;
-    const d = new Date();
-    const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    const newCol: Column = { key: 'sale_' + Date.now(), name: 'Sale ' + dateStr, type: 'sale_tracker' };
+  const handleAddSaleColumn = async () => {
+    if (!customSaleName.trim()) return;
+    const newColKey = 'sale_' + Date.now();
+    const newCol = { key: newColKey, name: customSaleName, type: 'sale_tracker' as const };
+    const updatedConfig = { ...activeConfig, columns: [...activeConfig.columns, newCol] };
     
-    // Check if handleCreateColumn exists or handleSaveActivePageSettings
-    // Wait, the handleCreateColumn exists maybe, or I can just update the config.
-    const newConfig = { ...config, columns: [...config.columns, newCol] };
-    
-    fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: newConfig })
-    }).then(() => {
-      setState(prev => ({
-        ...prev,
-        pageConfigs: {
-          ...prev.pageConfigs,
-          [trackerName]: newConfig
-        }
-      }));
-      toast(`Added column for Today's Sale`);
-    }).catch(() => toast('Failed to add sale column'));
+    try {
+      await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config: updatedConfig }) });
+      setState(prev => ({ ...prev, pageConfigs: { ...prev.pageConfigs, [state.activePage]: updatedConfig } }));
+      setIsSalePromptOpen(false);
+      setCustomSaleName("");
+      toast(`Sale column "${customSaleName}" added successfully!`);
+    } catch (err) { console.error(err); toast("Failed to add sale column"); }
   };
 
   const handleSaveInlineEdit = async (pageName: string, rowId: string, colKey: string, val: string) => {
@@ -1927,14 +1909,12 @@ function AppContent() {
         </div>
       )}
       {displayConfig.isTrackerPage && (
-        <div className="bg-[#e8f5e9] border-y border-[#c8e6c9] px-3 py-2 flex items-center gap-2">
-          <Button variant="green" className="text-xs py-1" onClick={() => handleAddSaleCol(state.activePage)}>+ Add Today's Sale</Button>
-          <div className="border-l border-gray-300 h-4 mx-1"></div>
-          <Button variant={trackerFilter === 'low' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('low')}>🚨 Low Stock</Button>
-          <Button variant={trackerFilter === 'zero' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('zero')}>Show 0 Sale</Button>
-          <Button variant={trackerFilter === 'all' ? 'dark' : 'outline'} className="text-xs py-1" onClick={() => setTrackerFilter('all')}>Clear Filters</Button>
+        <div className="bg-[#e8edf2] px-3 py-2 flex gap-3 border-b border-[#d8d8d8] items-center">
+          <button onClick={() => setIsSalePromptOpen(true)} className="bg-[#217346] text-white px-3 py-1.5 rounded text-sm font-bold shadow hover:bg-[#1e6b41]">➕ Add Sale Column</button>
+          <span className="text-xs text-[#2b579a] font-semibold">(Click to add custom date like "24-25 April")</span>
           <div className="flex-1"></div>
-          <Button variant="blue" className="text-xs py-1" onClick={() => handleSyncTracker(state.activePage)}>🔄 Sync New Items</Button>
+          <button onClick={() => setTrackerFilter('low')} className="bg-red-100 text-red-800 px-3 py-1.5 rounded text-sm font-bold shadow">🚨 Low Stock</button>
+          <button onClick={() => setTrackerFilter('all')} className="bg-gray-200 text-gray-800 px-3 py-1.5 rounded text-sm font-bold shadow">Clear Filter</button>
         </div>
       )}
       {(() => {
@@ -2646,6 +2626,19 @@ function AppContent() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {isSalePromptOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-[350px] shadow-2xl">
+            <h3 className="text-lg font-bold mb-1 text-[#2b579a]">Enter Sale Date</h3>
+            <p className="text-xs text-gray-500 mb-4">Enter custom duration (e.g., "24-25 April")</p>
+            <input autoFocus className="w-full border-2 border-[#d7dde1] p-2.5 rounded-md mb-5 outline-none focus:border-[#2b579a] text-sm font-semibold" placeholder="e.g. 24-25 April" value={customSaleName} onChange={(e) => setCustomSaleName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddSaleColumn()} />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setIsSalePromptOpen(false)} className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-bold text-sm">Cancel</button>
+              <button onClick={handleAddSaleColumn} className="px-4 py-1.5 bg-[#2b579a] hover:bg-[#1a3c6d] text-white rounded font-bold text-sm">Create Column</button>
             </div>
           </div>
         </div>
