@@ -23,6 +23,7 @@ export const ActivePageSettingsModal = ({
   onFindDuplicates,
   onClearPageData,
   onCreateTracker,
+  onConfigureCopyBoxes,
   existingPages,
   setConfirmationModal
 }: {
@@ -42,6 +43,7 @@ export const ActivePageSettingsModal = ({
   onFindDuplicates: () => void;
   onClearPageData: () => void;
   onCreateTracker?: (sourcePage: string) => void;
+  onConfigureCopyBoxes: () => void;
   existingPages: string[];
   setConfirmationModal: (modal: { isOpen: boolean, title?: string, message?: string, onConfirm: () => void } | null) => void;
 }) => {
@@ -256,17 +258,24 @@ export const ActivePageSettingsModal = ({
         </div>
       </div>
 
-      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 mb-4">
-        <div>
-          <p className="text-sm font-bold text-gray-700">Show Global Copy Boxes</p>
-          <p className="text-[10px] text-gray-500 font-semibold">Enable or disable the 3 copy boxes at the top of this page.</p>
+      <div className="flex flex-col gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-[#2b579a]">📦 Page Copy Boxes</p>
+            <p className="text-[10px] text-gray-500 font-semibold leading-tight mt-0.5">Enable and configure combination copy boxes specific to this page.</p>
+          </div>
+          <input 
+            type="checkbox" 
+            className="w-5 h-5 cursor-pointer accent-[#2b579a]"
+            checked={pageConfig?.showCopyBoxes !== false} 
+            onChange={(e) => saveConfig({ showCopyBoxes: e.target.checked }, false)}
+          />
         </div>
-        <input 
-          type="checkbox" 
-          className="w-5 h-5 cursor-pointer accent-[#2b579a]"
-          checked={pageConfig?.showCopyBoxes !== false} 
-          onChange={(e) => saveConfig({ showCopyBoxes: e.target.checked }, false)}
-        />
+        {pageConfig?.showCopyBoxes !== false && (
+          <Button variant="outline" className="w-full text-xs py-1.5 mt-1 border-[#2b579a] text-[#2b579a] hover:bg-blue-50" onClick={onConfigureCopyBoxes}>
+            ⚙️ Configure Copy Boxes for this Page
+          </Button>
+        )}
       </div>
 
       {!pageConfig?.isTrackerPage && onCreateTracker && (

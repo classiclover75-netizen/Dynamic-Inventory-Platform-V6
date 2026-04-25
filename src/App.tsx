@@ -2136,15 +2136,6 @@ function AppContent() {
                 </button>
                 <button 
                   className="w-full text-left border-0 rounded bg-[#f4f6f8] text-[#263238] text-xs font-bold p-2 cursor-pointer hover:bg-[#e8edf2] mb-1"
-                  onClick={() => {
-                    setShowTopSettings(false);
-                    toggleModal('globalCopyBoxesSettings', true);
-                  }}
-                >
-                  📦 Copy Boxes Settings
-                </button>
-                <button 
-                  className="w-full text-left border-0 rounded bg-[#f4f6f8] text-[#263238] text-xs font-bold p-2 cursor-pointer hover:bg-[#e8edf2] mb-1"
                   onClick={() => { setShowTopSettings(false); setTempHistoryLimit(maxSearchHistory); setShowHistoryLimitModal(true); }}
                 >
                   🕒 Search History Limit
@@ -2416,6 +2407,11 @@ function AppContent() {
         existingPages={state.pages}
         setConfirmationModal={setConfirmationModal}
         onCreateTracker={handleCreateTracker}
+        onConfigureCopyBoxes={() => {
+          setReturnToSettings(true);
+          toggleModal('activePageSettings', false);
+          toggleModal('globalCopyBoxesSettings', true);
+        }}
       />
 
       <RenamePageModal 
