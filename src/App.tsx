@@ -662,7 +662,16 @@ function AppContent() {
     const sourceRows = state.pageRows[sourcePage] || [];
     if (!sourceConfig) return toast("Source page not found!");
 
-    const trackerName = `${sourcePage} - Live Tracker`;
+    // SMART AUTO-NUMBERING LOGIC
+    const baseTrackerName = `${sourcePage} - Live Tracker`;
+    let trackerCounter = 1;
+    let trackerName = `${baseTrackerName} (${trackerCounter})`;
+    
+    // Keep increasing the number in brackets if the name already exists
+    while (state.pages.includes(trackerName)) {
+      trackerCounter++;
+      trackerName = `${baseTrackerName} (${trackerCounter})`;
+    }
     
     // EXACT COPY of ALL columns, appending only Total and Remaining
     const newColumns = [
@@ -686,47 +695,18 @@ function AppContent() {
     }));
 
     try {
-      const response = await fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trackerName })
-      });
+      await fetch('/api/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: trackerName, config: newConfig }) });
+      await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: newRows }) });
 
-      if (response.ok) {
-        await fetch(`/api/pageConfigs/${encodeURIComponent(trackerName)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config: newConfig })
-        });
-        
-        await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows: newRows })
-        });
-
-        setState(prev => ({
-          ...prev,
-          pages: [...prev.pages, trackerName],
-          activePage: trackerName,
-          pageConfigs: {
-            ...prev.pageConfigs,
-            [trackerName]: newConfig
-          },
-          pageRows: {
-            ...prev.pageRows,
-            [trackerName]: newRows
-          }
-        }));
-        
-        toast(`Tracker "${trackerName}" created with ALL columns!`);
-      } else {
-        const data = await response.json();
-        toast(data.error || 'Failed to create tracker page');
-      }
-    } catch (err) {
-      console.error(err);
-      toast('Error creating tracker page');
+      setState(prev => ({
+        ...prev, pages: [...prev.pages, trackerName], activePage: trackerName,
+        pageConfigs: { ...prev.pageConfigs, [trackerName]: newConfig },
+        pageRows: { ...prev.pageRows, [trackerName]: newRows }
+      }));
+      toast(`Tracker "${trackerName}" created with ALL columns!`);
+    } catch (err) { 
+      console.error(err); 
+      toast("Failed to create tracker page"); 
     }
   };
 
