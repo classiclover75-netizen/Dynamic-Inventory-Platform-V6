@@ -27,8 +27,9 @@ export const GlobalCopyBoxesSettingsModal: React.FC<GlobalCopyBoxesSettingsModal
 
   useEffect(() => {
     if (isOpen) {
-      if (state.globalCopyBoxes) {
-        setSettings(state.globalCopyBoxes);
+      const pageConfig = state.pageConfigs[state.activePage];
+      if (pageConfig?.copyBoxConfig) {
+        setSettings(pageConfig.copyBoxConfig);
       } else {
         setSettings({
           enabled: true,
@@ -39,7 +40,7 @@ export const GlobalCopyBoxesSettingsModal: React.FC<GlobalCopyBoxesSettingsModal
         });
       }
     }
-  }, [isOpen, state.globalCopyBoxes]);
+  }, [isOpen, state.activePage, state.pageConfigs]);
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -63,11 +64,11 @@ export const GlobalCopyBoxesSettingsModal: React.FC<GlobalCopyBoxesSettingsModal
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="📦 Copy Boxes Settings">
+    <Modal isOpen={isOpen} onClose={onClose} title="📦 Page Combination Copy Boxes">
       <div className="space-y-4">
         <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="flex flex-col">
-            <span className="text-sm font-bold text-gray-700">Global Copy Boxes</span>
+            <span className="text-sm font-bold text-gray-700">Page Combination Copy Boxes</span>
             <span className="text-xs text-gray-500">Enable or disable the floating copy boxes UI</span>
           </div>
           <button

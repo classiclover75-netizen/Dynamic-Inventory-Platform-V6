@@ -62,13 +62,6 @@ function AppContent() {
     activePage: '',
     pageConfigs: {},
     pageRows: {},
-    globalCopyBoxes: {
-      enabled: true,
-      box1: { sourcePage: '', sourceColumn: '' },
-      box2: { sourcePage: '', sourceColumn: '' },
-      separator: '-',
-      order: ['box1', 'box2', 'box3']
-    },
     globalRowNoWidth: 100
   });
 
@@ -100,7 +93,6 @@ function AppContent() {
       pages: [],
       pageConfigs: {},
       pageRows: {},
-      globalCopyBoxes: state.globalCopyBoxes,
       globalRowNoWidth: state.globalRowNoWidth
     };
     try {
@@ -137,7 +129,6 @@ function AppContent() {
           setState(prev => ({
             ...prev,
             pages: data.pages || [],
-            globalCopyBoxes: data.globalCopyBoxes || prev.globalCopyBoxes,
             globalRowNoWidth: data.globalRowNoWidth || prev.globalRowNoWidth,
             activePage: data.pages && data.pages.length > 0 && !prev.activePage ? data.pages[0] : prev.activePage
           }));
@@ -1950,10 +1941,11 @@ function AppContent() {
                                                     navigator.clipboard.writeText(plainText).then(() => {
                                                       setActivePopupId(itemId);
                                                       setActiveAnchor(target);
-                                                      if (state.globalCopyBoxes) {
+                                                      const activeCopyCfg = state.pageConfigs[state.activePage]?.copyBoxConfig;
+                                                      if (activeCopyCfg) {
                                                         const currentPage = isSecondary ? activeConfig.secondarySearchPage! : state.activePage;
-                                                        if (state.globalCopyBoxes.box1.sourcePage === currentPage && state.globalCopyBoxes.box1.sourceColumn === col.key) setBox1Value(plainText);
-                                                        if (state.globalCopyBoxes.box2.sourcePage === currentPage && state.globalCopyBoxes.box2.sourceColumn === col.key) setBox2Value(plainText);
+                                                        if (activeCopyCfg.box1.sourcePage === currentPage && activeCopyCfg.box1.sourceColumn === col.key) setBox1Value(plainText);
+                                                        if (activeCopyCfg.box2.sourcePage === currentPage && activeCopyCfg.box2.sourceColumn === col.key) setBox2Value(plainText);
                                                       }
                                                     });
                                                   }}
@@ -2244,9 +2236,9 @@ function AppContent() {
         )}
       </div>
 
-      {state.globalCopyBoxes && activeConfig.showCopyBoxes !== false && (
+      {activeConfig.copyBoxConfig && activeConfig.showCopyBoxes !== false && (
         <GlobalCombinationCopyBoxes 
-          settings={state.globalCopyBoxes} 
+          settings={activeConfig.copyBoxConfig} 
           box1Value={box1Value} 
           box2Value={box2Value} 
         />
@@ -2501,11 +2493,12 @@ function AppContent() {
         setActiveAnchor={setActiveAnchor}
         pageName={previewContext?.pageName || state.activePage}
         onCopy={(item, colKey, pageName) => {
-          if (state.globalCopyBoxes) {
-            if (state.globalCopyBoxes.box1.sourcePage === pageName && state.globalCopyBoxes.box1.sourceColumn === colKey) {
+          const activeCopyCfg = state.pageConfigs[state.activePage]?.copyBoxConfig;
+          if (activeCopyCfg) {
+            if (activeCopyCfg.box1.sourcePage === pageName && activeCopyCfg.box1.sourceColumn === colKey) {
               setBox1Value(item);
             }
-            if (state.globalCopyBoxes.box2.sourcePage === pageName && state.globalCopyBoxes.box2.sourceColumn === colKey) {
+            if (activeCopyCfg.box2.sourcePage === pageName && activeCopyCfg.box2.sourceColumn === colKey) {
               setBox2Value(item);
             }
           }
@@ -2624,13 +2617,20 @@ function AppContent() {
         state={state}
         onSave={async (settings) => {
           try {
-            await fetch('/api/settings', {
+            const updatedConfig = { ...state.pageConfigs[state.activePage], copyBoxConfig: settings };
+            await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ globalCopyBoxes: settings, globalRowNoWidth: state.globalRowNoWidth })
+              body: JSON.stringify({ config: updatedConfig })
             });
-            setState(prev => ({ ...prev, globalCopyBoxes: settings }));
-            toast('Copy Boxes Settings saved');
+            setState(prev => ({
+              ...prev,
+              pageConfigs: {
+                ...prev.pageConfigs,
+                [state.activePage]: updatedConfig
+              }
+            }));
+            toast('Page Copy Boxes Settings saved');
           } catch (err) {
             console.error(err);
             toast('Failed to save settings to database');
@@ -2647,7 +2647,7 @@ function AppContent() {
             await fetch('/api/settings', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ globalCopyBoxes: state.globalCopyBoxes, globalRowNoWidth: width })
+              body: JSON.stringify({ globalRowNoWidth: width, maxSearchHistory: maxSearchHistory })
             });
             setState(prev => ({ ...prev, globalRowNoWidth: width }));
             toast('Row No. Resize Setting saved');
@@ -2738,7 +2738,7 @@ function AppContent() {
               <Button variant="outline" onClick={() => setShowHistoryLimitModal(false)}>Cancel</Button>
               <Button variant="green" onClick={async () => {
                 try {
-                  await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalCopyBoxes: state.globalCopyBoxes, globalRowNoWidth: state.globalRowNoWidth, maxSearchHistory: tempHistoryLimit }) });
+                  await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalRowNoWidth: state.globalRowNoWidth, maxSearchHistory: tempHistoryLimit }) });
                   setMaxSearchHistory(tempHistoryLimit); setShowHistoryLimitModal(false); toast('Limit updated to ' + tempHistoryLimit);
                 } catch (err) { toast('Failed to save settings'); }
               }}>Save Limit</Button>

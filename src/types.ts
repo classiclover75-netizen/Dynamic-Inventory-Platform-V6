@@ -44,6 +44,7 @@ export interface PageConfig {
   isTrackerPage?: boolean;
   minStockAlert?: number;
   showCopyBoxes?: boolean;
+  copyBoxConfig?: GlobalCopyBoxesSettings;
 }
 
 export interface RowData {
@@ -82,6 +83,5 @@ export interface AppState {
   activePage: string;
   pageConfigs: Record<string, PageConfig>;
   pageRows: Record<string, RowData[]>;
-  globalCopyBoxes?: GlobalCopyBoxesSettings;
   globalRowNoWidth?: number;
 }
