@@ -406,6 +406,7 @@ function AppContent() {
   const [showArchived, setShowArchived] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<{id: string, colKey: string, val: string} | null>(null);
   const [isSalePromptOpen, setIsSalePromptOpen] = useState(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [customSaleName, setCustomSaleName] = useState("");
 
   const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -758,41 +759,26 @@ function AppContent() {
     }
   };
 
-  const handleArchiveOldSales = async () => {
-    const config = state.pageConfigs[state.activePage];
-    if (!config || !config.isTrackerPage) return;
-
-    const saleCols = config.columns.filter(c => c.type === 'sale_tracker');
-    if (saleCols.length <= 1) {
-      toast('Not enough columns to archive');
-      return;
-    }
-
-    const lastSaleColKey = saleCols[saleCols.length - 1].key;
-
-    const newColumns = config.columns.map(col => {
-      if (col.type === 'sale_tracker' && col.key !== lastSaleColKey) {
-        return { ...col, archived: true };
-      }
-      return col;
-    });
-
-    const newConfig = { ...config, columns: newColumns };
-
+  const handleToggleColumnArchive = async (colKey: string, currentStatus: boolean) => {
+    if (!activeConfig) return;
+    const updatedColumns = activeConfig.columns.map(c => 
+      c.key === colKey ? { ...c, archived: !currentStatus } : c
+    );
+    const updatedConfig = { ...activeConfig, columns: updatedColumns };
+    
     try {
       await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, { 
         method: 'PUT', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ config: newConfig }) 
+        body: JSON.stringify({ config: updatedConfig }) 
       });
       setState(prev => ({ 
         ...prev, 
-        pageConfigs: { ...prev.pageConfigs, [state.activePage]: newConfig } 
+        pageConfigs: { ...prev.pageConfigs, [state.activePage]: updatedConfig } 
       }));
-      toast('Archived older sale columns');
-    } catch (err) {
-      console.error(err);
-      toast('Failed to archive columns');
+    } catch (err) { 
+      console.error(err); 
+      toast("Failed to update archive status"); 
     }
   };
 
@@ -2064,7 +2050,7 @@ function AppContent() {
       {displayConfig.isTrackerPage && (
         <div className="bg-[#e8edf2] px-3 py-2 flex flex-wrap gap-2 border-b border-[#d8d8d8] items-center">
           <button onClick={() => setIsSalePromptOpen(true)} className="bg-[#217346] text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-[#1e6b41]">➕ Add Sale Column</button>
-          <button onClick={handleArchiveOldSales} className="bg-amber-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-amber-700 flex items-center gap-1">🗄️ Archive Old</button>
+          <button onClick={() => setIsArchiveModalOpen(true)} className="bg-amber-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-amber-700 flex items-center gap-1">🗄️ Archive Column</button>
           <label className="flex items-center gap-1 text-xs font-bold text-gray-700 ml-2 cursor-pointer">
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded" /> Show History
           </label>
@@ -2799,6 +2785,42 @@ function AppContent() {
             <div className="flex justify-end gap-2">
               <button onClick={() => setIsSalePromptOpen(false)} className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-bold text-sm">Cancel</button>
               <button onClick={handleAddSaleColumn} className="px-4 py-1.5 bg-[#2b579a] hover:bg-[#1a3c6d] text-white rounded font-bold text-sm">Create Column</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ARCHIVE COLUMNS MODAL --- */}
+      {isArchiveModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-[400px] shadow-2xl">
+            <h3 className="text-lg font-bold mb-1 text-[#2b579a]">Archive Columns</h3>
+            <p className="text-xs text-gray-500 mb-4">Manually hide or show your custom sale date columns.</p>
+            
+            <div className="max-h-[300px] overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
+              {activeConfig?.columns.filter(c => c.type === 'sale_tracker').map(col => (
+                <div key={col.key} className="flex justify-between items-center p-2.5 border-b border-gray-200 last:border-b-0 bg-white mb-1 rounded shadow-sm">
+                  <span className="text-sm font-semibold text-gray-700">{col.name}</span>
+                  <button 
+                    onClick={() => handleToggleColumnArchive(col.key, !!col.archived)}
+                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${col.archived ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                  >
+                    {col.archived ? '👁️ Show' : '🙈 Hide'}
+                  </button>
+                </div>
+              ))}
+              {activeConfig?.columns.filter(c => c.type === 'sale_tracker').length === 0 && (
+                 <div className="text-sm text-gray-500 text-center p-4 font-semibold">No custom sale columns found yet.</div>
+              )}
+            </div>
+            
+            <div className="flex justify-end">
+              <button 
+                onClick={() => setIsArchiveModalOpen(false)} 
+                className="px-5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-bold text-sm transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
