@@ -29,6 +29,7 @@ export interface Column {
   sortPriority?: number;
   width?: number;
   resizeLocked?: boolean;
+  archived?: boolean;
 }
 
 export interface PageConfig {

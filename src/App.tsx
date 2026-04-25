@@ -402,7 +402,8 @@ function AppContent() {
   };
 
   const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
-  const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero'>('all');
+  const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero' | 'high'>('all');
+  const [showArchived, setShowArchived] = useState(false);
   const [inlineEdit, setInlineEdit] = useState<{id: string, colKey: string, val: string} | null>(null);
   const [isSalePromptOpen, setIsSalePromptOpen] = useState(false);
   const [customSaleName, setCustomSaleName] = useState("");
@@ -757,6 +758,44 @@ function AppContent() {
     }
   };
 
+  const handleArchiveOldSales = async () => {
+    const config = state.pageConfigs[state.activePage];
+    if (!config || !config.isTrackerPage) return;
+
+    const saleCols = config.columns.filter(c => c.type === 'sale_tracker');
+    if (saleCols.length <= 1) {
+      toast('Not enough columns to archive');
+      return;
+    }
+
+    const lastSaleColKey = saleCols[saleCols.length - 1].key;
+
+    const newColumns = config.columns.map(col => {
+      if (col.type === 'sale_tracker' && col.key !== lastSaleColKey) {
+        return { ...col, archived: true };
+      }
+      return col;
+    });
+
+    const newConfig = { ...config, columns: newColumns };
+
+    try {
+      await fetch(`/api/pageConfigs/${encodeURIComponent(state.activePage)}`, { 
+        method: 'PUT', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ config: newConfig }) 
+      });
+      setState(prev => ({ 
+        ...prev, 
+        pageConfigs: { ...prev.pageConfigs, [state.activePage]: newConfig } 
+      }));
+      toast('Archived older sale columns');
+    } catch (err) {
+      console.error(err);
+      toast('Failed to archive columns');
+    }
+  };
+
   const handleAddSaleColumn = async () => {
     if (!customSaleName.trim()) return;
     const newColKey = 'sale_' + Date.now();
@@ -1074,6 +1113,7 @@ function AppContent() {
     }
 
     // Modal band karein
+    const wasEditing = editingRowId;
     toggleModal('addRow', false);
     setEditingRowId(null);
 
@@ -1089,6 +1129,51 @@ function AppContent() {
         throw new Error('Database failed to save');
       }
 
+      // Auto-sync trackers
+      const linkedTrackers = Object.entries(state.pageConfigs)
+        .filter(([name, c]) => (c as PageConfig).linkedSourcePage === targetPage)
+        .map(([name]) => name);
+
+      for (const trackerName of linkedTrackers) {
+        const trackerConfig = state.pageConfigs[trackerName];
+        if (!trackerConfig) continue;
+        const trackerRows = [...(state.pageRows[trackerName] || [])];
+        let updatedTracker = false;
+        
+        for (const newRow of newRows) {
+          const tIdx = trackerRows.findIndex(r => r.id === newRow.id);
+          if (tIdx >= 0 && wasEditing) {
+            const existingTrackerRow = trackerRows[tIdx];
+            const trackerKeysToKeep = ['total_qty', 'remaining_qty', ...trackerConfig.columns.filter(c => c.type === 'sale_tracker').map(c => c.key)];
+            const preservedData: any = {};
+            for (const k of trackerKeysToKeep) if (k in existingTrackerRow) preservedData[k] = existingTrackerRow[k];
+            trackerRows[tIdx] = { ...newRow, ...preservedData };
+            updatedTracker = true;
+          } else if (!wasEditing) {
+            const textCols = state.pageConfigs[targetPage]?.columns.filter(c => c.type === 'text') || [];
+            const itemNameKey = textCols.length > 0 ? textCols[0].key : Object.keys(newRow).find(k => typeof newRow[k] === 'string' && k !== 'id') || 'id';
+            trackerRows.push({
+               id: newRow.id,
+               item_name: newRow[itemNameKey] || `Item ${newRow.id}`,
+               total_qty: '0'
+            });
+            updatedTracker = true;
+          }
+        }
+
+        if (updatedTracker) {
+          await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: trackerRows })
+          });
+          setState(prev => ({
+            ...prev,
+            pageRows: { ...prev.pageRows, [trackerName]: trackerRows }
+          }));
+        }
+      }
+
       // Jab database se OK aa jaye, tabhi success message show karein
       if (returnToImagePreview) {
         toggleModal('imagePreview', true);
@@ -1098,7 +1183,7 @@ function AppContent() {
         setReturnToSettings(false);
       }
       
-      toast(editingRowId ? 'Row updated successfully' : `${newRows.length} row(s) added successfully!`);
+      toast(wasEditing ? 'Row updated successfully' : `${newRows.length} row(s) added successfully!`);
 
     } catch (err) {
       console.error('Save Error:', err);
@@ -1130,6 +1215,27 @@ function AppContent() {
           [targetPage]: (prev.pageRows[targetPage] || []).filter(r => String(r.id) !== safeRowId)
         }
       }));
+
+      // Auto-sync trackers (delete row)
+      const linkedTrackers = Object.entries(state.pageConfigs)
+        .filter(([name, c]) => (c as PageConfig).linkedSourcePage === targetPage)
+        .map(([name]) => name);
+
+      for (const trackerName of linkedTrackers) {
+        const trackerRows = state.pageRows[trackerName] || [];
+        const newTrackerRows = trackerRows.filter(r => String(r.id) !== safeRowId);
+        if (newTrackerRows.length < trackerRows.length) {
+          await fetch(`/api/pageRows/${encodeURIComponent(trackerName)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: newTrackerRows })
+          });
+          setState(prev => ({
+            ...prev,
+            pageRows: { ...prev.pageRows, [trackerName]: newTrackerRows }
+          }));
+        }
+      }
       
       setSelectedRowIds(prev => {
         const next = new Set(prev);
@@ -1312,19 +1418,27 @@ function AppContent() {
       });
     }
     if (activeConfig.isTrackerPage && trackerFilter !== 'all') {
+      const saleCols = activeConfig.columns.filter(c => c.type === 'sale_tracker');
+      const latestSaleCol = saleCols.length > 0 ? saleCols[saleCols.length - 1].key : null;
       rows = rows.filter(row => {
         const total = parseFloat(String(row.total_qty || 0));
-        const totalSales = activeConfig.columns.filter(c => c.type === 'sale_tracker').reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
+        const totalSales = saleCols.reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
         const remaining = total - totalSales;
         const minStock = activeConfig.minStockAlert || 5;
+        const latestSaleVal = latestSaleCol ? parseFloat(String(row[latestSaleCol] || 0)) : 0;
 
         if (trackerFilter === 'low') {
           return remaining <= minStock;
         } else if (trackerFilter === 'zero') {
-          return totalSales === 0;
+          return latestSaleVal === 0 || !row[latestSaleCol!];
+        } else if (trackerFilter === 'high') {
+          return latestSaleVal > 0;
         }
         return true;
       });
+      if (trackerFilter === 'high' && latestSaleCol) {
+         rows = rows.sort((a, b) => parseFloat(String(b[latestSaleCol]||0)) - parseFloat(String(a[latestSaleCol]||0)));
+      }
     }
 
     return sortRows(rows, activeConfig.columns);
@@ -1390,19 +1504,27 @@ function AppContent() {
       });
     }
     if (secConfig.isTrackerPage && trackerFilter !== 'all') {
+      const saleCols = secConfig.columns.filter(c => c.type === 'sale_tracker');
+      const latestSaleCol = saleCols.length > 0 ? saleCols[saleCols.length - 1].key : null;
       rows = rows.filter(row => {
         const total = parseFloat(String(row.total_qty || 0));
-        const totalSales = secConfig.columns.filter(c => c.type === 'sale_tracker').reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
+        const totalSales = saleCols.reduce((sum, c) => sum + parseFloat(String(row[c.key] || 0)), 0);
         const remaining = total - totalSales;
         const minStock = secConfig.minStockAlert || 5;
+        const latestSaleVal = latestSaleCol ? parseFloat(String(row[latestSaleCol] || 0)) : 0;
 
         if (trackerFilter === 'low') {
           return remaining <= minStock;
         } else if (trackerFilter === 'zero') {
-          return totalSales === 0;
+          return latestSaleVal === 0 || !row[latestSaleCol!];
+        } else if (trackerFilter === 'high') {
+          return latestSaleVal > 0;
         }
         return true;
       });
+      if (trackerFilter === 'high' && latestSaleCol) {
+         rows = rows.sort((a, b) => parseFloat(String(b[latestSaleCol]||0)) - parseFloat(String(a[latestSaleCol]||0)));
+      }
     }
 
     return sortRows(rows, secConfig.columns);
@@ -1545,6 +1667,7 @@ function AppContent() {
   const renderTable = (config: PageConfig, rows: RowData[], queries: string[], isSecondary: boolean, originalRows: RowData[], isGhost: boolean, ghostIds: Set<string>) => {
     const activePage = isSecondary ? activeConfig.secondarySearchPage : state.activePage;
     const isTableSorted = config.columns.some(col => col.sortEnabled && col.sortPriority && col.sortPriority > 0);
+    const visibleColumns = config.columns.filter(col => showArchived || !col.archived);
     if (!config || !config.columns) {
       return (
         <div className="flex flex-col items-center justify-center p-20 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 m-4">
@@ -1557,10 +1680,10 @@ function AppContent() {
     const virtualItems = virtualizer.getVirtualItems();
     const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
     const paddingBottom = virtualItems.length > 0 ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end : 0;
-    const colSpan = config.columns.length + (!isSecondary && config.rowReorderEnabled ? 1 : 0);
+    const colSpan = visibleColumns.length + (!isSecondary && config.rowReorderEnabled ? 1 : 0);
 
     const colTokensMap: Record<string, string[]> = {};
-    config.columns.forEach(col => {
+    visibleColumns.forEach(col => {
         let tokens: string[] = [];
         queries.forEach(query => {
             const qLower = query.toLowerCase();
@@ -1623,7 +1746,7 @@ function AppContent() {
                   />
                 </th>
               )}
-              {config.columns.map((col, i) => {
+              {visibleColumns.map((col, i) => {
                 const widthStyle = col.width ? { width: `${col.width}px`, minWidth: `${col.width}px` } : {};
                 const srWidthStyle = col.key === 'sr' ? { width: `${state.globalRowNoWidth || 100}px`, minWidth: `${state.globalRowNoWidth || 100}px` } : {};
                 const finalWidthStyle = { ...widthStyle, ...srWidthStyle };
@@ -1705,7 +1828,7 @@ function AppContent() {
                               </div>
                             </td>
                           )}
-                          {config.columns.map((col, colIndex) => {
+                          {visibleColumns.map((col, colIndex) => {
                             const widthStyle = col.width ? { width: `${col.width}px`, minWidth: `${col.width}px` } : {};
                             const hoverClass = 'data-[hovered-col=true]:bg-[#f0f7ff] data-[hovered-row=true]:bg-[#e8f0fe] data-[hovered-exact=true]:!bg-[#d2e3fc] data-[hovered-exact=true]:outline data-[hovered-exact=true]:outline-[3px] data-[hovered-exact=true]:outline-[#2b579a] data-[hovered-exact=true]:relative data-[hovered-exact=true]:z-10 data-[hovered-exact=true]:shadow-inner';
                             const colTokens = isActiveRow ? (colTokensMap[col.key] || []) : [];
@@ -1939,12 +2062,19 @@ function AppContent() {
         </div>
       )}
       {displayConfig.isTrackerPage && (
-        <div className="bg-[#e8edf2] px-3 py-2 flex gap-3 border-b border-[#d8d8d8] items-center">
-          <button onClick={() => setIsSalePromptOpen(true)} className="bg-[#217346] text-white px-3 py-1.5 rounded text-sm font-bold shadow hover:bg-[#1e6b41]">➕ Add Sale Column</button>
-          <span className="text-xs text-[#2b579a] font-semibold">(Click to add custom date like "24-25 April")</span>
+        <div className="bg-[#e8edf2] px-3 py-2 flex flex-wrap gap-2 border-b border-[#d8d8d8] items-center">
+          <button onClick={() => setIsSalePromptOpen(true)} className="bg-[#217346] text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-[#1e6b41]">➕ Add Sale Column</button>
+          <button onClick={handleArchiveOldSales} className="bg-amber-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-amber-700 flex items-center gap-1">🗄️ Archive Old</button>
+          <label className="flex items-center gap-1 text-xs font-bold text-gray-700 ml-2 cursor-pointer">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded" /> Show History
+          </label>
           <div className="flex-1"></div>
-          <button onClick={() => setTrackerFilter('low')} className="bg-red-100 text-red-800 px-3 py-1.5 rounded text-sm font-bold shadow">🚨 Low Stock</button>
-          <button onClick={() => setTrackerFilter('all')} className="bg-gray-200 text-gray-800 px-3 py-1.5 rounded text-sm font-bold shadow">Clear Filter</button>
+          <div className="flex gap-1 bg-white rounded shadow-sm p-1">
+            <button onClick={() => setTrackerFilter('high')} className={`px-2 py-1 rounded text-xs font-bold ${trackerFilter === 'high' ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-100'}`}>⭐ High Sale</button>
+            <button onClick={() => setTrackerFilter('zero')} className={`px-2 py-1 rounded text-xs font-bold ${trackerFilter === 'zero' ? 'bg-gray-200 text-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>0️⃣ Zero Sale</button>
+            <button onClick={() => setTrackerFilter('low')} className={`px-2 py-1 rounded text-xs font-bold ${trackerFilter === 'low' ? 'bg-red-100 text-red-800' : 'text-gray-600 hover:bg-gray-100'}`}>🚨 Low Stock</button>
+            <button onClick={() => setTrackerFilter('all')} className={`px-2 py-1 rounded text-xs font-bold ${trackerFilter === 'all' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-100'}`}>All</button>
+          </div>
         </div>
       )}
       {(() => {
