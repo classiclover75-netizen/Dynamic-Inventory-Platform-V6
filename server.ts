@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
+import sharp from 'sharp';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -85,32 +86,62 @@ async function processRowImages(row: any) {
 
   for (const key in newRow) {
     const value = newRow[key];
-    let base64String = null;
-    if (typeof value === 'string' && value.startsWith('data:image/')) {
-      base64String = value;
-    } else if (typeof value === 'object' && value !== null && typeof value.data === 'string' && value.data.startsWith('data:image/')) {
-      base64String = value.data;
+    let imgVal = value;
+    if (typeof value === 'object' && value !== null && typeof value.data === 'string') {
+      imgVal = value.data;
     }
-    if (base64String && base64String.includes(';base64,')) {
-      try {
-        const parts = base64String.split(';base64,');
-        const mimeType = parts[0].replace('data:image/', '');
-        let ext = mimeType.split('+')[0];
-        if (ext === 'jpeg') ext = 'jpg';
-        if (!ext) ext = 'png';
-        const base64Data = parts[1];
-        const filename = `${uuidv4()}.${ext}`;
-        const filepath = path.join(UPLOADS_DIR, filename);
-        
-        writePromises.push(
-          fs.promises.writeFile(filepath, base64Data, 'base64').then(() => {
+
+    if (typeof imgVal === 'string') {
+      if (/^https?:\/\//i.test(imgVal)) {
+        writePromises.push((async () => {
+          try {
+            const response = await fetch(imgVal);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const arrayBuffer = await response.arrayBuffer();
+            let buffer = Buffer.from(arrayBuffer);
+            let ext = 'jpg';
+            if (buffer.byteLength > 300 * 1024) {
+              buffer = await sharp(buffer).jpeg({ quality: 80 }).toBuffer();
+            } else {
+               const contentType = response.headers.get('content-type');
+               if (contentType) {
+                 if (contentType.includes('png')) ext = 'png';
+                 else if (contentType.includes('gif')) ext = 'gif';
+                 else if (contentType.includes('webp')) ext = 'webp';
+               }
+            }
+            const filename = `${uuidv4()}.${ext}`;
+            const filepath = path.join(UPLOADS_DIR, filename);
+            await fs.promises.writeFile(filepath, buffer);
             newRow[key] = filename;
-          }).catch(err => {
-            console.error(`Failed to write image ${filename}:`, err);
-          })
-        );
-      } catch (err) {
-        console.error("Failed to process image:", err);
+          } catch (err) {
+            console.error(`Failed to process URL image ${imgVal}:`, err);
+          }
+        })());
+      } else if (imgVal.startsWith('data:image/')) {
+        writePromises.push((async () => {
+          try {
+            const parts = imgVal.split(';base64,');
+            const mimeType = parts[0].replace('data:image/', '');
+            let ext = mimeType.split('+')[0];
+            if (ext === 'jpeg') ext = 'jpg';
+            if (!ext) ext = 'png';
+            const base64Data = parts[1];
+            let buffer = Buffer.from(base64Data, 'base64');
+            
+            if (buffer.byteLength > 300 * 1024) {
+               buffer = await sharp(buffer).jpeg({ quality: 80 }).toBuffer();
+               ext = 'jpg';
+            }
+            
+            const filename = `${uuidv4()}.${ext}`;
+            const filepath = path.join(UPLOADS_DIR, filename);
+            await fs.promises.writeFile(filepath, buffer);
+            newRow[key] = filename;
+          } catch (err) {
+            console.error("Failed to process base64 image:", err);
+          }
+        })());
       }
     }
   }
@@ -135,9 +166,18 @@ function cleanupOrphanImages(oldRows: any[], newRows: any[]) {
 
   const extractFiles = (rows: any[], set: Set<string>) => {
     rows.forEach(row => {
-      Object.values(row).forEach(val => {
-        if (typeof val === 'string' && imageExtensions.some(ext => val.toLowerCase().endsWith(ext))) {
-          set.add(val);
+      Object.values(row).forEach(value => {
+        let val = value;
+        if (typeof value === 'object' && value !== null && typeof (value as any).data === 'string') {
+          val = (value as any).data;
+        }
+        if (typeof val === 'string') {
+          if (val.includes('/uploads/')) {
+            val = val.split('/uploads/').pop() || val;
+          }
+          if (imageExtensions.some(ext => val.toLowerCase().endsWith(ext)) && !/^https?:\/\//i.test(val)) {
+            set.add(val);
+          }
         }
       });
     });
@@ -185,18 +225,36 @@ function embedImagesInRows(rows: any[]) {
   return rows.map(row => {
     const newRow = { ...row };
     for (const key in newRow) {
-      const val = newRow[key];
-      if (typeof val === 'string' && /\.(png|jpe?g|gif|webp)$/i.test(val)) {
-        try {
-          const filepath = path.join(UPLOADS_DIR, val);
-          if (fs.existsSync(filepath)) {
-            const ext = path.extname(val).substring(1).toLowerCase();
-            const mimeType = ext === 'jpg' ? 'jpeg' : ext;
-            const fileData = fs.readFileSync(filepath, { encoding: 'base64' });
-            newRow[key] = `data:image/${mimeType};base64,${fileData}`;
+      let val = newRow[key];
+      let isObject = false;
+      if (typeof val === 'object' && val !== null && typeof val.data === 'string') {
+        val = val.data;
+        isObject = true;
+      }
+
+      if (typeof val === 'string') {
+        if (val.includes('/uploads/')) {
+          val = val.split('/uploads/').pop() || val;
+        }
+        
+        if (/\.(png|jpe?g|gif|webp)$/i.test(val) && !/^https?:\/\//i.test(val)) {
+          try {
+            const filepath = path.join(UPLOADS_DIR, val);
+            if (fs.existsSync(filepath)) {
+              const ext = path.extname(val).substring(1).toLowerCase();
+              const mimeType = ext === 'jpg' ? 'jpeg' : ext;
+              const fileData = fs.readFileSync(filepath, { encoding: 'base64' });
+              const result = `data:image/${mimeType};base64,${fileData}`;
+              newRow[key] = isObject ? { ...newRow[key], data: result } : result;
+            } else {
+              newRow[key] = isObject ? { ...newRow[key], data: val } : val;
+            }
+          } catch (e) {
+            console.error(`Failed to convert image ${val} to base64:`, e);
+            newRow[key] = isObject ? { ...newRow[key], data: val } : val;
           }
-        } catch (e) {
-          console.error(`Failed to convert image ${val} to base64:`, e);
+        } else {
+           newRow[key] = isObject ? { ...newRow[key], data: val } : val;
         }
       }
     }
