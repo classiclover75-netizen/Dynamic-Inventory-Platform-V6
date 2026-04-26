@@ -100,16 +100,34 @@ async function processRowImages(row: any) {
             const arrayBuffer = await response.arrayBuffer();
             let buffer = Buffer.from(arrayBuffer);
             let ext = 'jpg';
-            if (buffer.byteLength > 300 * 1024) {
-              buffer = await sharp(buffer).jpeg({ quality: 80 }).toBuffer();
-            } else {
-               const contentType = response.headers.get('content-type');
-               if (contentType) {
-                 if (contentType.includes('png')) ext = 'png';
-                 else if (contentType.includes('gif')) ext = 'gif';
-                 else if (contentType.includes('webp')) ext = 'webp';
-               }
+            
+            try {
+              const metadata = await sharp(buffer).metadata();
+              if (buffer.byteLength > 300 * 1024 || (metadata.width && metadata.width > 1200) || (metadata.height && metadata.height > 1200)) {
+                buffer = await sharp(buffer)
+                  .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality: 80 })
+                  .toBuffer();
+                ext = 'jpg';
+              } else {
+                 const contentType = response.headers.get('content-type');
+                 if (contentType) {
+                   if (contentType.includes('png')) ext = 'png';
+                   else if (contentType.includes('gif')) ext = 'gif';
+                   else if (contentType.includes('webp')) ext = 'webp';
+                 }
+              }
+            } catch (sharpError) {
+              console.error(`Sharp processing failed for ${imgVal}:`, sharpError);
+              // Fallback to original buffer and checking content-type
+              const contentType = response.headers.get('content-type');
+              if (contentType) {
+                if (contentType.includes('png')) ext = 'png';
+                else if (contentType.includes('gif')) ext = 'gif';
+                else if (contentType.includes('webp')) ext = 'webp';
+              }
             }
+            
             const filename = `${uuidv4()}.${ext}`;
             const filepath = path.join(UPLOADS_DIR, filename);
             await fs.promises.writeFile(filepath, buffer);
@@ -129,9 +147,18 @@ async function processRowImages(row: any) {
             const base64Data = parts[1];
             let buffer = Buffer.from(base64Data, 'base64');
             
-            if (buffer.byteLength > 300 * 1024) {
-               buffer = await sharp(buffer).jpeg({ quality: 80 }).toBuffer();
-               ext = 'jpg';
+            try {
+              const metadata = await sharp(buffer).metadata();
+              if (buffer.byteLength > 300 * 1024 || (metadata.width && metadata.width > 1200) || (metadata.height && metadata.height > 1200)) {
+                buffer = await sharp(buffer)
+                  .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+                  .jpeg({ quality: 80 })
+                  .toBuffer();
+                ext = 'jpg';
+              }
+            } catch (sharpError) {
+               console.error("Sharp processing failed for base64:", sharpError);
+               // keep original buffer and ext
             }
             
             const filename = `${uuidv4()}.${ext}`;
