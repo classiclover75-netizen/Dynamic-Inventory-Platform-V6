@@ -80,7 +80,7 @@ async function saveLocalDB(data: any) {
 }
 
 // Image Helpers
-async function processRowImages(row: any) {
+async function processRowImages(row: any, forceSave = false) {
   const newRow = { ...row };
   const writePromises: Promise<void>[] = [];
 
@@ -118,6 +118,7 @@ async function processRowImages(row: any) {
                  }
               }
             } catch (sharpError) {
+              if (!forceSave) throw new Error('SHARP_UNSUPPORTED_FORMAT');
               console.error(`Sharp processing failed for ${imgVal}:`, sharpError);
               // Fallback to original buffer and checking content-type
               const contentType = response.headers.get('content-type');
@@ -132,7 +133,8 @@ async function processRowImages(row: any) {
             const filepath = path.join(UPLOADS_DIR, filename);
             await fs.promises.writeFile(filepath, buffer);
             newRow[key] = filename;
-          } catch (err) {
+          } catch (err: any) {
+            if (err.message === 'SHARP_UNSUPPORTED_FORMAT') throw err;
             console.error(`Failed to process URL image ${imgVal}:`, err);
           }
         })());
@@ -157,6 +159,7 @@ async function processRowImages(row: any) {
                 ext = 'jpg';
               }
             } catch (sharpError) {
+               if (!forceSave) throw new Error('SHARP_UNSUPPORTED_FORMAT');
                console.error("Sharp processing failed for base64:", sharpError);
                // keep original buffer and ext
             }
@@ -165,7 +168,8 @@ async function processRowImages(row: any) {
             const filepath = path.join(UPLOADS_DIR, filename);
             await fs.promises.writeFile(filepath, buffer);
             newRow[key] = filename;
-          } catch (err) {
+          } catch (err: any) {
+            if (err.message === 'SHARP_UNSUPPORTED_FORMAT') throw err;
             console.error("Failed to process base64 image:", err);
           }
         })());
@@ -176,11 +180,11 @@ async function processRowImages(row: any) {
   return newRow;
 }
 
-async function processRowsConcurrently(rows: any[], limit = 50) {
+async function processRowsConcurrently(rows: any[], limit = 50, forceSave = false) {
   const results = [];
   for (let i = 0; i < rows.length; i += limit) {
     const chunk = rows.slice(i, i + limit);
-    const chunkResults = await Promise.all(chunk.map(processRowImages));
+    const chunkResults = await Promise.all(chunk.map(r => processRowImages(r, forceSave)));
     results.push(...chunkResults);
   }
   return results;
@@ -489,10 +493,11 @@ app.put('/api/pageRows/:name', async (req, res) => {
   try {
     const { name } = req.params;
     const { rows } = req.body;
+    const forceSave = req.query.force === 'true';
     if (isUsingMongoDB) {
       const oldPageRows = await PageRow.find({ pageName: name });
       const oldRows = oldPageRows.map(r => r.data);
-      const newRows = await processRowsConcurrently(rows || []);
+      const newRows = await processRowsConcurrently(rows || [], 50, forceSave);
       
       cleanupOrphanImages(oldRows, newRows);
       
@@ -505,14 +510,17 @@ app.put('/api/pageRows/:name', async (req, res) => {
       const page = db.pages.find((p: any) => p.name === name);
       if (page) {
         const oldRows = page.rows || [];
-        const newRows = await processRowsConcurrently(rows || []);
+        const newRows = await processRowsConcurrently(rows || [], 50, forceSave);
         cleanupOrphanImages(oldRows, newRows);
         page.rows = newRows;
       }
       await saveLocalDB(db);
     }
     res.json({ success: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.message === 'SHARP_UNSUPPORTED_FORMAT') {
+      return res.status(400).json({ requiresConfirmation: true, error: "Bhai mujhe is file ka format samajh nahi aa raha. Main sirf (JPG, PNG, WEBP, GIF, AVIF, TIFF) read kar sakta hon. Kya aap is file ko aise hi software mein dalna chahte hain?" });
+    }
     res.status(500).json({ error: 'Failed to update rows' });
   }
 });
@@ -541,7 +549,7 @@ app.put('/api/state', async (req, res) => {
     const processedPageRows: Record<string, any[]> = {};
     if (newState.pageRows) {
       for (const pageName in newState.pageRows) {
-        processedPageRows[pageName] = await processRowsConcurrently(newState.pageRows[pageName]);
+        processedPageRows[pageName] = await processRowsConcurrently(newState.pageRows[pageName], 50, true);
       }
     }
 

@@ -1173,61 +1173,64 @@ function AppContent() {
     });
   };
 
-  const handleSaveRows = async (newRows: RowData[], pageName?: string) => {
+  const handleSaveRows = async (newRows: RowData[], pageName?: string, force = false) => {
     const targetPage = pageName || state.activePage;
-    let updatedRows: RowData[] = [];
+    let currentRows = [...(state.pageRows[targetPage] || [])];
 
-    // 1. Foran screen par data update karein (Optimistic UI)
-    setState(prev => {
-      const currentRows = [...(prev.pageRows[targetPage] || [])];
+    if (editingRowId) {
+      const idx = currentRows.findIndex(r => r.id === editingRowId);
+      if (idx >= 0) currentRows[idx] = newRows[0];
+      else currentRows.push(newRows[0]);
+    } else {
+      currentRows.push(...newRows);
+    }
 
-      if (editingRowId) {
-        const idx = currentRows.findIndex(r => r.id === editingRowId);
-        if (idx >= 0) currentRows[idx] = newRows[0];
-        else currentRows.push(newRows[0]);
-      } else {
-        currentRows.push(...newRows);
+    try {
+      const response = await fetch(`/api/pageRows/${encodeURIComponent(targetPage)}${force ? '?force=true' : ''}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: currentRows })
+      });
+
+      if (!response.ok) {
+        if (response.status === 400) {
+           const data = await response.json();
+           if (data.requiresConfirmation) {
+              setConfirmationModal({ 
+                isOpen: true, 
+                title: "Unsupported Image Format", 
+                message: data.error, 
+                onConfirm: () => handleSaveRows(newRows, pageName, true) 
+              });
+              return; 
+           }
+        }
+        throw new Error('Database failed to save');
       }
-      
-      updatedRows = currentRows; // Data copy kar liya API ke liye
 
-      return {
+      // Success! Update state
+      setState(prev => ({
         ...prev,
         pageRows: {
           ...prev.pageRows,
           [targetPage]: currentRows
         }
-      };
-    });
+      }));
 
-    // 2. Search clear karein aur neechay scroll karein
-    if (!editingRowId) {
-      setPrimarySearchInput('');
-      setPrimarySearchTags([]);
-      
-      setTimeout(() => {
-        if (parentRef.current) {
-          parentRef.current.scrollTop = parentRef.current.scrollHeight;
-        }
-      }, 100); 
-    }
-
-    // Modal band karein
-    const wasEditing = editingRowId;
-    toggleModal('addRow', false);
-    setEditingRowId(null);
-
-    // 3. 🚨 THE CRITICAL FIX: Database ka PUKKA intezar karein (AWAIT)
-    try {
-      const response = await fetch(`/api/pageRows/${encodeURIComponent(targetPage)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: updatedRows })
-      });
-
-      if (!response.ok) {
-        throw new Error('Database failed to save');
+      if (!editingRowId && !force) {
+        setPrimarySearchInput('');
+        setPrimarySearchTags([]);
+        
+        setTimeout(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTop = parentRef.current.scrollHeight;
+          }
+        }, 100); 
       }
+
+      const wasEditing = editingRowId;
+      toggleModal('addRow', false);
+      setEditingRowId(null);
 
       // Auto-sync trackers
       const linkedTrackers = Object.entries(state.pageConfigs)
