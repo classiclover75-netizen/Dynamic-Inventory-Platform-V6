@@ -519,7 +519,7 @@ app.put('/api/pageRows/:name', async (req, res) => {
     res.json({ success: true });
   } catch (err: any) {
     if (err.message === 'SHARP_UNSUPPORTED_FORMAT') {
-      return res.status(400).json({ requiresConfirmation: true, error: "Bhai mujhe is file ka format samajh nahi aa raha. Main sirf (JPG, PNG, WEBP, GIF, AVIF, TIFF) read kar sakta hon. Kya aap is file ko aise hi software mein dalna chahte hain?" });
+      return res.status(400).json({ requiresConfirmation: true, error: "Unsupported image format detected. The system can only process standard images (JPG, PNG, WEBP, GIF, AVIF, TIFF). Do you want to force save this file as-is without processing?" });
     }
     res.status(500).json({ error: 'Failed to update rows' });
   }
