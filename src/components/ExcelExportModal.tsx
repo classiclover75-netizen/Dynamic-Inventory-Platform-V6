@@ -24,6 +24,9 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedColumnKeys, setSelectedColumnKeys] = useState<Set<string>>(
+    new Set(columns.filter(c => c.key !== 'sr').map(c => c.key))
+  );
   const { toast } = useToast();
 
   const getImageUrl = (val: any) => {
@@ -51,7 +54,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
       .replace(/&#39;/g, "'");
   };
 
-  const exportColumns = useMemo(() => columns.filter(c => c.key !== 'sr'), [columns]);
+  const exportColumns = useMemo(() => columns.filter(c => c.key !== 'sr' && selectedColumnKeys.has(c.key)), [columns, selectedColumnKeys]);
 
   const highlightText = (text: string, query: string) => {
     const cleanText = text ? String(text).replace(/<[^>]*>/g, '').replace(/<br\s*\/?>/gi, ' ').replace(/&nbsp;/gi, ' ') : '';
@@ -183,6 +186,10 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
   };
 
   const handleExport = async () => {
+    if (exportColumns.length === 0) {
+      toast("Please select at least one column to export.");
+      return;
+    }
     setIsProcessing(true);
     setProgress(10);
 
@@ -383,6 +390,28 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
               </div>
             </div>
 
+            <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-sm font-bold text-gray-700">Export Columns:</span>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {columns.filter(c => c.key !== 'sr').map(col => (
+                  <label key={col.key} className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-600 hover:text-gray-900">
+                    <input 
+                      type="checkbox" 
+                      className="accent-[#2b579a] w-4 h-4 cursor-pointer"
+                      checked={selectedColumnKeys.has(col.key)}
+                      onChange={(e) => {
+                        const next = new Set(selectedColumnKeys);
+                        if (e.target.checked) next.add(col.key);
+                        else next.delete(col.key);
+                        setSelectedColumnKeys(next);
+                      }}
+                    />
+                    <span>{col.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="flex-1 overflow-auto border rounded relative bg-white">
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 bg-gray-100 z-10 shadow-sm">
@@ -393,7 +422,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                         else setSelectedRowIds(new Set());
                       }} />
                     </th>
-                    {columns.map((c, i) => (
+                    {exportColumns.map((c, i) => (
                       <th key={c.key} className="p-2 border text-left">
                         <div className="flex items-center gap-1">
                           {i + 1}. {c.name} {c.locked && '🔒'}
@@ -403,7 +432,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row, i) => (
+                  {filteredRows.map((row) => (
                     <tr key={row.id} className={selectedRowIds.has(row.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
                       <td className="p-2 border text-center">
                         <input 
@@ -418,7 +447,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                           }} 
                         />
                       </td>
-                      {columns.map(c => (
+                      {exportColumns.map(c => (
                         <td key={c.key} className="p-2 border whitespace-pre-wrap break-words min-w-[150px]">
                           {c.type === 'image' && row[c.key] ? 
                             <img src={getImageUrl(row[c.key])} className="h-10 w-10 object-contain mx-auto rounded" alt="img" /> 
@@ -430,7 +459,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                   ))}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={columns.length + 1} className="p-4 text-center text-gray-500 font-medium">
+                      <td colSpan={exportColumns.length + 1} className="p-4 text-center text-gray-500 font-medium">
                         No data matches your search.
                       </td>
                     </tr>
@@ -448,7 +477,12 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                   <ArrowLeft size={16} /> Back to Active Page
                 </Button>
                 <Button variant="red" onClick={handleClearData}>Clear Data</Button>
-                <Button variant="dark" onClick={handleExport} className="flex items-center gap-2">
+                <Button 
+                  variant="dark" 
+                  onClick={handleExport} 
+                  className="flex items-center gap-2"
+                  disabled={exportColumns.length === 0}
+                >
                   <FileSpreadsheet size={16} /> Download Excel
                 </Button>
               </div>
