@@ -44,6 +44,13 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
     setLocalRows(rows);
   }, [rows]);
 
+  // Reset selected columns when the modal opens or columns change
+  React.useEffect(() => {
+    if (isOpen) {
+      setSelectedColumnKeys(new Set(columns.filter(c => c.key !== 'sr').map(c => c.key)));
+    }
+  }, [isOpen, columns]);
+
   const decodeHtmlEntities = (text: string) => {
     if (!text) return text;
     return String(text)
