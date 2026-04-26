@@ -252,23 +252,36 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
         // Image processing
         for (let j = 0; j < exportColumns.length; j++) {
           const col = exportColumns[j];
-          const imgVal = rowData[col.key];
-          if (col.type === 'image' && imgVal) {
+          const rawImgVal = rowData[col.key];
+          
+          if (col.type === 'image' && rawImgVal) {
             let base64Data = '';
+            
+            // Extract the actual image string from object format (for newly added rows)
+            let imgVal = typeof rawImgVal === 'object' && rawImgVal !== null ? rawImgVal.data : rawImgVal;
             
             if (typeof imgVal === 'string') {
               if (imgVal.startsWith('data:image')) {
                 base64Data = imgVal;
+              } else if (imgVal.startsWith('base64,')) {
+                base64Data = `data:image/png;${imgVal}`;
+              } else if (!/^https?:\/\//i.test(imgVal) && !imgVal.match(/\.(jpeg|jpg|gif|png|webp|svg|heic)$/i)) {
+                // Heuristic: If it has no obvious file extension and no URL, it might be raw base64
+                if (imgVal.length > 50 && !imgVal.includes(' ')) {
+                  base64Data = `data:image/png;base64,${imgVal}`;
+                }
               } else if (!/^https?:\/\//i.test(imgVal)) {
-                // Local filename
+                // Local filename fetch fallback
                 try {
                   const response = await fetch(`/uploads/${imgVal}`);
-                  const blob = await response.blob();
-                  base64Data = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                  });
+                  if (response.ok) {
+                    const blob = await response.blob();
+                    base64Data = await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.readAsDataURL(blob);
+                    });
+                  }
                 } catch (e) {
                   console.error("Failed to fetch local image for export", e);
                 }
@@ -279,26 +292,36 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
             }
             
             if (base64Data && base64Data.startsWith('data:image')) {
-              // Code 2 wala dynamic extension detector
-              const extension = base64Data.split(';')[0].split('/')[1];
-              const base64 = base64Data.split(',')[1];
-              
               try {
-                const imageId = workbook.addImage({
-                  base64,
-                  extension: (extension === 'jpeg' ? 'jpg' : extension) as any,
-                });
+                // Safety check to ensure we can split and parse it
+                const parts = base64Data.split(',');
+                if (parts.length > 1) {
+                  // e.g. "data:image/png;base64" -> split(';') -> "data:image/png" -> split('/') -> "png"
+                  const extensionWrapper = parts[0].split(';')[0];
+                  let extension = extensionWrapper && extensionWrapper.includes('/') ? extensionWrapper.split('/')[1] : 'png';
+                  
+                  const base64 = parts[1];
+                  const validExtensions = ['jpeg', 'png', 'gif', 'jpg'];
+                  if (!validExtensions.includes(extension)) {
+                    extension = 'png'; // Fallback for exceljs support
+                  }
+                  
+                  const imageId = workbook.addImage({
+                    base64,
+                    extension: (extension === 'jpeg' ? 'jpg' : extension) as any,
+                  });
 
-                // Aapka dia gaya exact pehle code wala placement logic
-                worksheet.addImage(imageId, {
-                  // Left side se zyada gap (0.3) aur top se normal gap (0.1)
-                  tl: { col: j + 0.5, row: excelRow.number - 1 + 0.1 }, 
-                  
-                  // Width ko thoda aur kam kar diya taake image right border ko touch na kare
-                  ext: { width: 90, height: 80 }, 
-                  
-                  editAs: 'oneCell' 
-                });
+                  // Aapka dia gaya exact pehle code wala placement logic
+                  worksheet.addImage(imageId, {
+                    // Left side se zyada gap (0.3) aur top se normal gap (0.1)
+                    tl: { col: j + 0.5, row: excelRow.number - 1 + 0.1 }, 
+                    
+                    // Width ko thoda aur kam kar diya taake image right border ko touch na kare
+                    ext: { width: 90, height: 80 }, 
+                    
+                    editAs: 'oneCell' 
+                  });
+                }
               } catch (e) { 
                 console.error("Image export failed", e); 
               }
