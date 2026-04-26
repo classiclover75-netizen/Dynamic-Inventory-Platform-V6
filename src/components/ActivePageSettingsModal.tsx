@@ -20,6 +20,7 @@ export const ActivePageSettingsModal = ({
   onReorderSearchBars,
   onImportExcel,
   onExportExcel,
+  onExportPageJson,
   onFindDuplicates,
   onClearPageData,
   onCreateTracker,
@@ -40,6 +41,7 @@ export const ActivePageSettingsModal = ({
   onReorderSearchBars: () => void;
   onImportExcel: () => void;
   onExportExcel: () => void;
+  onExportPageJson: () => void;
   onFindDuplicates: () => void;
   onClearPageData: () => void;
   onCreateTracker?: (sourcePage: string) => void;
@@ -314,6 +316,10 @@ export const ActivePageSettingsModal = ({
         <div className="flex gap-2 mb-2">
           <Button variant="green" className="flex-1 justify-center" onClick={onImportExcel}>📥 Import Excel</Button>
           <Button variant="blue" className="flex-1 justify-center" onClick={onExportExcel}>📤 Export Excel</Button>
+        </div>
+
+        <div className="mb-2">
+          <Button variant="dark" className="w-full justify-center" onClick={onExportPageJson}>💾 Export Page JSON</Button>
         </div>
 
         <div className="flex gap-2 mb-2">

@@ -406,6 +406,30 @@ function AppContent() {
     toast('Export started. Check your downloads.');
   };
 
+  const handleExportPageJson = () => {
+    if (!state.activePage) return;
+    
+    const pageData = {
+      name: state.activePage,
+      config: state.pageConfigs[state.activePage],
+      rows: state.pageRows[state.activePage] || []
+    };
+    
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pageData, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", `${state.activePage}_backup_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+      toast('Page JSON export complete');
+    } catch (err) {
+      console.error(err);
+      toast('Failed to export page JSON');
+    }
+  };
+
   const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
   const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero' | 'high'>('all');
   const [showArchived, setShowArchived] = useState(false);
@@ -2397,6 +2421,9 @@ function AppContent() {
           setReturnToSettings(true);
           toggleModal('activePageSettings', false);
           toggleModal('excelExport', true);
+        }}
+        onExportPageJson={() => {
+          handleExportPageJson();
         }}
         onFindDuplicates={() => {
           setReturnToSettings(true);
