@@ -321,8 +321,8 @@ export const ActivePageSettingsModal = ({
           <Button variant="blue" className="flex-1 justify-center" onClick={onExportExcel}>📤 Export Excel</Button>
         </div>
 
-        <div className="mb-2">
-          <Button variant="outline" className="w-full justify-center mb-2" onClick={() => fileInputRef.current?.click()}>📥 Import Page JSON</Button>
+        <div className="flex gap-2 mb-2">
+          <Button variant="outline" className="flex-1 justify-center" onClick={() => fileInputRef.current?.click()}>📥 Import Page JSON</Button>
           <input 
             type="file" 
             accept=".json" 
@@ -335,7 +335,7 @@ export const ActivePageSettingsModal = ({
               }
             }} 
           />
-          <Button variant="dark" className="w-full justify-center" onClick={onExportPageJson}>💾 Export Page JSON</Button>
+          <Button variant="dark" className="flex-1 justify-center" onClick={onExportPageJson}>💾 Export Page JSON</Button>
         </div>
 
         <div className="flex gap-2 mb-2">
