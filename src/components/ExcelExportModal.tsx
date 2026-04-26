@@ -287,7 +287,19 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                 }
               } else {
                 // External URL
-                base64Data = imgVal;
+                try {
+                  const response = await fetch(imgVal, { mode: 'cors' });
+                  if (response.ok) {
+                    const blob = await response.blob();
+                    base64Data = await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.readAsDataURL(blob);
+                    });
+                  }
+                } catch (e) {
+                  console.error("Failed to fetch external image for export", e);
+                }
               }
             }
             
