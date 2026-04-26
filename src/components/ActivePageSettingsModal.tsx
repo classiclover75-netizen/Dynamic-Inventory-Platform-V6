@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button, Input, Modal } from './ui';
 import { Column, PageConfig } from '../types';
 import { useToast } from './ToastProvider';
@@ -20,6 +20,7 @@ export const ActivePageSettingsModal = ({
   onReorderSearchBars,
   onImportExcel,
   onExportExcel,
+  onImportPageJson,
   onExportPageJson,
   onFindDuplicates,
   onClearPageData,
@@ -41,6 +42,7 @@ export const ActivePageSettingsModal = ({
   onReorderSearchBars: () => void;
   onImportExcel: () => void;
   onExportExcel: () => void;
+  onImportPageJson: (file: File) => void;
   onExportPageJson: () => void;
   onFindDuplicates: () => void;
   onClearPageData: () => void;
@@ -49,6 +51,7 @@ export const ActivePageSettingsModal = ({
   existingPages: string[];
   setConfirmationModal: (modal: { isOpen: boolean, title?: string, message?: string, onConfirm: () => void } | null) => void;
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [rowReorder, setRowReorder] = useState(pageConfig?.rowReorderEnabled || false);
   const [hoverPreview, setHoverPreview] = useState(pageConfig?.hoverPreviewEnabled || false);
   const [independentSearchBars, setIndependentSearchBars] = useState(pageConfig?.independentSearchBars ?? true);
@@ -319,6 +322,19 @@ export const ActivePageSettingsModal = ({
         </div>
 
         <div className="mb-2">
+          <Button variant="outline" className="w-full justify-center mb-2" onClick={() => fileInputRef.current?.click()}>📥 Import Page JSON</Button>
+          <input 
+            type="file" 
+            accept=".json" 
+            ref={fileInputRef} 
+            style={{ display: 'none' }} 
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                onImportPageJson(e.target.files[0]);
+                e.target.value = ''; // Reset input
+              }
+            }} 
+          />
           <Button variant="dark" className="w-full justify-center" onClick={onExportPageJson}>💾 Export Page JSON</Button>
         </div>
 

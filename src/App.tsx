@@ -430,6 +430,75 @@ function AppContent() {
     }
   };
 
+  const handleImportPageJson = async (file: File) => {
+    const activePage = state.activePage;
+    if (!activePage) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (!parsed.rows || !Array.isArray(parsed.rows)) {
+        toast('Invalid JSON format: missing rows array');
+        return;
+      }
+
+      setImportProgress({ message: 'Merging data...', percent: 10 });
+
+      const currentRows = state.pageRows[activePage] || [];
+      const pageConfig = state.pageConfigs[activePage];
+      const imageCols = pageConfig?.columns.filter(c => c.type === 'image').map(c => c.key) || [];
+
+      const existingRowsMap = new Map(currentRows.map(r => [String(r.id), r]));
+      
+      const mergedRows = currentRows.map(existingRow => {
+        const incomingRow = parsed.rows.find((r: any) => String(r.id) === String(existingRow.id));
+        if (incomingRow) {
+          const merged = { ...incomingRow };
+          for (const colKey of imageCols) {
+            if (existingRow[colKey]) {
+              merged[colKey] = existingRow[colKey];
+            }
+          }
+          return merged;
+        }
+        return existingRow;
+      });
+
+      const incomingNewRows = parsed.rows.filter((r: any) => !existingRowsMap.has(String(r.id)));
+      mergedRows.push(...incomingNewRows);
+
+      setImportProgress({ message: 'Saving changes...', percent: 50 });
+
+      const response = await fetch(`/api/pageRows/${encodeURIComponent(activePage)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: mergedRows })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update page rows on server');
+      }
+
+      setState(prev => ({
+        ...prev,
+        pageRows: {
+          ...prev.pageRows,
+          [activePage]: mergedRows
+        }
+      }));
+
+      setImportProgress({ message: 'Done!', percent: 100 });
+      setTimeout(() => setImportProgress({ message: 'Processing...', percent: null }), 2000);
+      toast('Page data imported successfully!');
+
+    } catch (error) {
+      console.error("Failed to import page json:", error);
+      toast('Failed to import JSON file');
+      setImportProgress({ message: 'Processing...', percent: null });
+    }
+  };
+
   const [importProgress, setImportProgress] = useState<{ message: string, percent: number | null }>({ message: 'Processing...', percent: null });
   const [trackerFilter, setTrackerFilter] = useState<'all' | 'low' | 'zero' | 'high'>('all');
   const [showArchived, setShowArchived] = useState(false);
@@ -2421,6 +2490,9 @@ function AppContent() {
           setReturnToSettings(true);
           toggleModal('activePageSettings', false);
           toggleModal('excelExport', true);
+        }}
+        onImportPageJson={(file) => {
+          handleImportPageJson(file);
         }}
         onExportPageJson={() => {
           handleExportPageJson();
