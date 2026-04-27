@@ -411,6 +411,47 @@ app.post('/api/admin/migrate-images', async (req, res) => {
   }
 });
 
+app.get('/api/export/page/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    let pageData: any = null;
+
+    if (isUsingMongoDB) {
+      const page = await Page.findOne({ name });
+      if (!page) {
+        return res.status(404).json({ error: 'Page not found' });
+      }
+      const oldPageRows = await PageRow.find({ pageName: name });
+      const rows = oldPageRows.map(r => r.data);
+      
+      pageData = {
+        name: page.name,
+        config: page.config,
+        rows: embedImagesInRows(rows)
+      };
+    } else {
+      const db = await getLocalDB();
+      const page = db.pages.find((p: any) => p.name === name);
+      if (!page) {
+        return res.status(404).json({ error: 'Page not found' });
+      }
+      pageData = {
+        name: page.name,
+        config: page.config,
+        rows: embedImagesInRows(page.rows || [])
+      };
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}_backup_${Date.now()}.json"`);
+    res.send(JSON.stringify(pageData, null, 2));
+
+  } catch (err) {
+    console.error("Export page failed:", err);
+    res.status(500).json({ error: 'Failed to export page' });
+  }
+});
+
 app.get('/api/export', async (req, res) => {
   try {
     let state: any = {};
