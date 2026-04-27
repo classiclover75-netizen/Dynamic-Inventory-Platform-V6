@@ -303,8 +303,9 @@ function embedImagesInRows(rows: any[]) {
 app.post('/api/admin/migrate-images', async (req, res) => {
   try {
     let migratedCount = 0;
+    const brokenImages: any[] = [];
     
-    const migrateRow = async (row: any) => {
+    const migrateRow = async (row: any, pageName: string) => {
       let imageMigratedCount = 0;
       const newRow = { ...row };
       const rowPromises: Promise<void>[] = [];
@@ -317,25 +318,35 @@ app.post('/api/admin/migrate-images', async (req, res) => {
           isObject = true;
         }
 
-        if (typeof val === 'string' && /^https?:\/\//i.test(val)) {
-          if (val.includes('/uploads/')) {
-            let filename = val.split('/uploads/').pop() || val;
-            filename = filename.split('?')[0];
-            newRow[key] = isObject ? { ...newRow[key], data: filename } : filename;
-            imageMigratedCount++;
-          } else {
-            rowPromises.push((async () => {
-              const dummyRow = { [key]: newRow[key] };
-              try {
-                const processed = await processRowImages(dummyRow, true);
-                if (processed[key] !== newRow[key]) {
-                   newRow[key] = processed[key];
-                   imageMigratedCount++;
-                }
-              } catch (e) {
-                console.error("Migration error for external URL:", e);
+        if (typeof val === 'string') {
+          if (/^https?:\/\//i.test(val)) {
+            if (val.includes('/uploads/')) {
+              let filename = val.split('/uploads/').pop() || val;
+              filename = filename.split('?')[0];
+              newRow[key] = isObject ? { ...newRow[key], data: filename } : filename;
+              imageMigratedCount++;
+              
+              if (!fs.existsSync(path.join(UPLOADS_DIR, filename))) {
+                brokenImages.push({ page: pageName, rowId: row.id, column: key, filename });
               }
-            })());
+            } else {
+              rowPromises.push((async () => {
+                const dummyRow = { [key]: newRow[key] };
+                try {
+                  const processed = await processRowImages(dummyRow, true);
+                  if (processed[key] !== newRow[key]) {
+                     newRow[key] = processed[key];
+                     imageMigratedCount++;
+                  }
+                } catch (e) {
+                  console.error("Migration error for external URL:", e);
+                }
+              })());
+            }
+          } else if (!val.startsWith('data:') && /\.(png|jpe?g|gif|webp|avif|tiff)$/i.test(val)) {
+            if (!fs.existsSync(path.join(UPLOADS_DIR, val))) {
+              brokenImages.push({ page: pageName, rowId: row.id, column: key, filename: val });
+            }
           }
         }
       }
@@ -343,11 +354,11 @@ app.post('/api/admin/migrate-images', async (req, res) => {
       return { newRow, imageMigratedCount };
     };
 
-    const migrateRowsConcurrently = async (rows: any[]) => {
+    const migrateRowsConcurrently = async (rows: any[], pageName: string) => {
        const mapped = [];
        for (let i = 0; i < rows.length; i += 50) {
          const chunk = rows.slice(i, i + 50);
-         const chunkResults = await Promise.all(chunk.map(migrateRow));
+         const chunkResults = await Promise.all(chunk.map(r => migrateRow(r, pageName)));
          mapped.push(...chunkResults);
        }
        return mapped;
@@ -363,7 +374,7 @@ app.post('/api/admin/migrate-images', async (req, res) => {
       }
       
       for (const [pageName, rows] of pagesMap.entries()) {
-        const results = await migrateRowsConcurrently(rows);
+        const results = await migrateRowsConcurrently(rows, pageName);
         const newRows = results.map((r: any) => r.newRow);
         const thisPageMigratedCount = results.reduce((sum: number, r: any) => sum + r.imageMigratedCount, 0);
         
@@ -378,7 +389,7 @@ app.post('/api/admin/migrate-images', async (req, res) => {
       const db = await getLocalDB();
       for (const page of db.pages) {
         if (!page.rows || page.rows.length === 0) continue;
-        const results = await migrateRowsConcurrently(page.rows);
+        const results = await migrateRowsConcurrently(page.rows, page.name);
         const newRows = results.map((r: any) => r.newRow);
         const thisPageMigratedCount = results.reduce((sum: number, r: any) => sum + r.imageMigratedCount, 0);
         
@@ -393,7 +404,7 @@ app.post('/api/admin/migrate-images', async (req, res) => {
       }
     }
 
-    res.json({ success: true, count: migratedCount });
+    res.json({ success: true, count: migratedCount, brokenImages });
   } catch (err: any) {
     console.error("Migration failed:", err);
     res.status(500).json({ error: 'Migration failed' });

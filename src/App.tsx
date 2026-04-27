@@ -2292,7 +2292,23 @@ function AppContent() {
                       const data = await response.json();
                       if (data.success) {
                         toast(`Migrated ${data.count} images successfully!`);
-                        if (data.count > 0) {
+                        
+                        if (data.brokenImages && data.brokenImages.length > 0) {
+                          const message = `Found ${data.brokenImages.length} broken images. Please check these rows:\n\n` + 
+                            data.brokenImages.map((b: any) => `[${b.page}] -> Row ID [${b.rowId}] -> Column [${b.column}]`).join('\n');
+                          
+                          setTimeout(() => {
+                            setConfirmationModal({
+                              isOpen: true,
+                              title: "Missing Files Detected",
+                              message: message,
+                              confirmLabel: "Understood",
+                              onConfirm: () => {
+                                 if (data.count > 0) window.location.reload();
+                              }
+                            });
+                          }, 500);
+                        } else if (data.count > 0) {
                           setTimeout(() => window.location.reload(), 2000);
                         }
                       } else {
