@@ -2283,6 +2283,30 @@ function AppContent() {
 
                 <div className="text-[11px] font-bold text-red-600 border-b border-red-100 mb-2 mt-3 pb-1.5 uppercase tracking-wide">DANGER ZONE</div>
                 <button 
+                  className="w-full text-left border-0 rounded bg-blue-50 text-blue-700 text-xs font-bold p-2 cursor-pointer hover:bg-blue-100 mb-2"
+                  onClick={async () => {
+                    setShowTopSettings(false);
+                    try {
+                      toast('Migration started. Please wait...', { duration: 5000 });
+                      const response = await fetch('/api/admin/migrate-images', { method: 'POST' });
+                      const data = await response.json();
+                      if (data.success) {
+                        toast(`Migrated ${data.count} images successfully!`);
+                        if (data.count > 0) {
+                          setTimeout(() => window.location.reload(), 2000);
+                        }
+                      } else {
+                        toast('Migration failed');
+                      }
+                    } catch (err) {
+                      console.error(err);
+                      toast('Migration failed');
+                    }
+                  }}
+                >
+                  🚀 Migrate All Images
+                </button>
+                <button 
                   className="w-full text-left border-0 rounded bg-red-50 text-red-700 text-xs font-bold p-2 cursor-pointer hover:bg-red-100 mb-1"
                   onClick={() => {
                     setShowTopSettings(false);

@@ -264,15 +264,22 @@ function embedImagesInRows(rows: any[]) {
       }
 
       if (typeof val === 'string') {
-        if (val.includes('/uploads/')) {
-          val = val.split('/uploads/').pop() || val;
+        let filename = val;
+        let shouldEmbed = false;
+
+        if (filename.includes('/uploads/')) {
+          filename = filename.split('/uploads/').pop() || filename;
+          filename = filename.split('?')[0]; // remove query string
+          shouldEmbed = true;
+        } else if (!/^https?:\/\//i.test(filename)) {
+          shouldEmbed = true;
         }
         
-        if (/\.(png|jpe?g|gif|webp)$/i.test(val) && !/^https?:\/\//i.test(val)) {
+        if (shouldEmbed && /\.(png|jpe?g|gif|webp|avif|tiff)$/i.test(filename)) {
           try {
-            const filepath = path.join(UPLOADS_DIR, val);
+            const filepath = path.join(UPLOADS_DIR, filename);
             if (fs.existsSync(filepath)) {
-              const ext = path.extname(val).substring(1).toLowerCase();
+              const ext = path.extname(filename).substring(1).toLowerCase();
               const mimeType = ext === 'jpg' ? 'jpeg' : ext;
               const fileData = fs.readFileSync(filepath, { encoding: 'base64' });
               const result = `data:image/${mimeType};base64,${fileData}`;
@@ -292,6 +299,106 @@ function embedImagesInRows(rows: any[]) {
     return newRow;
   });
 }
+
+app.post('/api/admin/migrate-images', async (req, res) => {
+  try {
+    let migratedCount = 0;
+    
+    const migrateRow = async (row: any) => {
+      let imageMigratedCount = 0;
+      const newRow = { ...row };
+      const rowPromises: Promise<void>[] = [];
+      
+      for (const key in newRow) {
+        let val = newRow[key];
+        let isObject = false;
+        if (typeof val === 'object' && val !== null && typeof val.data === 'string') {
+          val = val.data;
+          isObject = true;
+        }
+
+        if (typeof val === 'string' && /^https?:\/\//i.test(val)) {
+          if (val.includes('/uploads/')) {
+            let filename = val.split('/uploads/').pop() || val;
+            filename = filename.split('?')[0];
+            newRow[key] = isObject ? { ...newRow[key], data: filename } : filename;
+            imageMigratedCount++;
+          } else {
+            rowPromises.push((async () => {
+              const dummyRow = { [key]: newRow[key] };
+              try {
+                const processed = await processRowImages(dummyRow, true);
+                if (processed[key] !== newRow[key]) {
+                   newRow[key] = processed[key];
+                   imageMigratedCount++;
+                }
+              } catch (e) {
+                console.error("Migration error for external URL:", e);
+              }
+            })());
+          }
+        }
+      }
+      await Promise.all(rowPromises);
+      return { newRow, imageMigratedCount };
+    };
+
+    const migrateRowsConcurrently = async (rows: any[]) => {
+       const mapped = [];
+       for (let i = 0; i < rows.length; i += 50) {
+         const chunk = rows.slice(i, i + 50);
+         const chunkResults = await Promise.all(chunk.map(migrateRow));
+         mapped.push(...chunkResults);
+       }
+       return mapped;
+    };
+
+    if (isUsingMongoDB) {
+      const oldPageRows = await PageRow.find({});
+      const pagesMap = new Map<string, any[]>();
+      
+      for (const pr of oldPageRows) {
+        if (!pagesMap.has(pr.pageName)) pagesMap.set(pr.pageName, []);
+        pagesMap.get(pr.pageName)!.push(pr.data);
+      }
+      
+      for (const [pageName, rows] of pagesMap.entries()) {
+        const results = await migrateRowsConcurrently(rows);
+        const newRows = results.map((r: any) => r.newRow);
+        const thisPageMigratedCount = results.reduce((sum: number, r: any) => sum + r.imageMigratedCount, 0);
+        
+        if (thisPageMigratedCount > 0) {
+          migratedCount += thisPageMigratedCount;
+          cleanupOrphanImages(rows, newRows);
+          await PageRow.deleteMany({ pageName });
+          await PageRow.insertMany(newRows.map((r: any) => ({ pageName, data: r })));
+        }
+      }
+    } else {
+      const db = await getLocalDB();
+      for (const page of db.pages) {
+        if (!page.rows || page.rows.length === 0) continue;
+        const results = await migrateRowsConcurrently(page.rows);
+        const newRows = results.map((r: any) => r.newRow);
+        const thisPageMigratedCount = results.reduce((sum: number, r: any) => sum + r.imageMigratedCount, 0);
+        
+        if (thisPageMigratedCount > 0) {
+          migratedCount += thisPageMigratedCount;
+          cleanupOrphanImages(page.rows, newRows);
+          page.rows = newRows;
+        }
+      }
+      if (migratedCount > 0) {
+        await saveLocalDB(db);
+      }
+    }
+
+    res.json({ success: true, count: migratedCount });
+  } catch (err: any) {
+    console.error("Migration failed:", err);
+    res.status(500).json({ error: 'Migration failed' });
+  }
+});
 
 app.get('/api/export', async (req, res) => {
   try {
