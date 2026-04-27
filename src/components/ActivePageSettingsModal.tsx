@@ -345,7 +345,7 @@ export const ActivePageSettingsModal = ({
           <Button variant="outline" className="flex-1 justify-center text-red-600 border-red-600 hover:bg-red-50" onClick={() => {
             setConfirmationModal({
               isOpen: true,
-              title: "Confirm Clear All Data",
+              title: "Confirm Clear Active Page Data",
               message: "Are you sure you want to permanently delete ALL rows on this page? This action cannot be undone.",
               onConfirm: () => {
                 onClearPageData();
@@ -353,7 +353,7 @@ export const ActivePageSettingsModal = ({
               }
             });
           }}>
-            <Trash2 size={14} /> Clear All Data
+            <Trash2 size={14} /> Clear Active Page All Data 
           </Button>
         </div>
 
