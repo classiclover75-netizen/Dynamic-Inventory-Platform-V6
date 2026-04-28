@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // useEffect add kiya gaya
 import { AppState, GlobalCopyBoxesSettings } from '../types';
 import { Copy } from 'lucide-react';
 import { useToast } from './ToastProvider';
@@ -15,7 +15,21 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
   box2Value
 }) => {
   const { toast } = useToast();
-  const [lastCopiedContent, setLastCopiedContent] = useState<Record<string, string>>({});
+
+  // 1. Initial state ab localStorage se data uthaye gi
+  const [lastCopiedContent, setLastCopiedContent] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('inventory_copy_box_states');
+    try {
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  // 2. Jab bhi lastCopiedContent update ho, usay localStorage mein save karein
+  useEffect(() => {
+    localStorage.setItem('inventory_copy_box_states', JSON.stringify(lastCopiedContent));
+  }, [lastCopiedContent]);
 
   if (!settings || settings.enabled === false) return null;
 
