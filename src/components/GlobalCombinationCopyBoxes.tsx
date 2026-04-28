@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AppState, GlobalCopyBoxesSettings } from '../types';
 import { Copy } from 'lucide-react';
 import { useToast } from './ToastProvider';
@@ -15,18 +15,20 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
   box2Value
 }) => {
   const { toast } = useToast();
+  const [lastCopiedContent, setLastCopiedContent] = useState<Record<string, string>>({});
 
   if (!settings || settings.enabled === false) return null;
 
   const box3Value = [box1Value, box2Value].filter(Boolean).join(settings.separator);
 
-  const handleCopy = (text: string, boxName: string) => {
+  const handleCopy = (id: string, text: string, boxName: string) => {
     if (!text) {
       toast(`${boxName} is empty`);
       return;
     }
     navigator.clipboard.writeText(text).then(() => {
       toast(`Copied ${boxName} to clipboard`);
+      setLastCopiedContent(prev => ({ ...prev, [id]: text }));
     }).catch(() => {
       toast(`Failed to copy ${boxName}`);
     });
@@ -51,20 +53,32 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
       boxName = settings.box3Label || 'Combined Box';
     }
 
+    const isCopied = lastCopiedContent[id] === value;
+    const isChanged = lastCopiedContent[id] !== undefined && lastCopiedContent[id] !== value;
+    
+    let wrapperClass = "flex-1 min-w-[200px] border rounded-md p-2 flex flex-col gap-1.5 shadow-sm transition-colors duration-200 ";
+    if (isCopied) {
+      wrapperClass += "border-green-500 bg-green-50";
+    } else if (isChanged) {
+      wrapperClass += "border-red-500 bg-red-50";
+    } else {
+      wrapperClass += "border-[#d8d8d8] bg-white";
+    }
+
     return (
-      <div key={id} className="flex-1 min-w-[200px] bg-white border border-[#d8d8d8] rounded-md p-2 flex flex-col gap-1.5 shadow-sm">
-        <div className="text-[11px] font-bold text-[#607d8b] uppercase tracking-wide flex justify-between items-center">
+      <div key={id} className={wrapperClass}>
+        <div className={`text-[11px] font-bold uppercase tracking-wide flex justify-between items-center ${isCopied ? 'text-green-700' : isChanged ? 'text-red-700' : 'text-[#607d8b]'}`}>
           <span>{title}</span>
           <button 
-            onClick={() => handleCopy(value, boxName)}
-            className="text-[#2b579a] hover:text-[#1a365d] bg-transparent border-0 cursor-pointer p-0.5 rounded hover:bg-blue-50 transition-colors flex items-center gap-1"
+            onClick={() => handleCopy(id, value, boxName)}
+            className={`bg-transparent border-0 cursor-pointer p-0.5 rounded transition-colors flex items-center gap-1 ${isCopied ? 'text-green-700 hover:bg-green-100' : isChanged ? 'text-red-600 hover:bg-red-100 font-bold animate-pulse' : 'text-[#2b579a] hover:text-[#1a365d] hover:bg-blue-50'}`}
             title="Copy to clipboard"
           >
-            <Copy size={12} /> Copy
+            <Copy size={12} /> {isCopied ? 'Copied' : isChanged ? 'Copy Update' : 'Copy'}
           </button>
         </div>
-        <div className="text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 min-h-[32px] break-all whitespace-pre-wrap">
-          {value || <span className="text-gray-400 italic">Empty</span>}
+        <div className={`text-sm rounded px-2 py-1.5 min-h-[32px] break-all whitespace-pre-wrap ${isCopied ? 'text-green-900 bg-green-100 border border-green-200' : isChanged ? 'text-red-900 bg-red-100 border border-red-200' : 'text-gray-800 bg-gray-50 border border-gray-200'}`}>
+          {value || <span className="opacity-50 italic">Empty</span>}
         </div>
       </div>
     );
