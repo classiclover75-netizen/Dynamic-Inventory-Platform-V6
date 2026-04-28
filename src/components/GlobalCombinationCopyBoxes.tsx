@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'; // React hooks ka sahi istemal
+import React, { useState, useEffect } from 'react';
 import { AppState, GlobalCopyBoxesSettings } from '../types';
 import { Copy } from 'lucide-react';
 import { useToast } from './ToastProvider';
@@ -16,19 +16,20 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
 }) => {
   const { toast } = useToast();
 
-  // 1. Memory State: Browser ki localStorage se purana data uthana
+  // 1. Memory State: localStorage ki jagah sessionStorage use kiya hai
+  // Taake refresh karne par memory saaf ho jaye
   const [lastCopiedContent, setLastCopiedContent] = useState<Record<string, string>>(() => {
     try {
-      const saved = localStorage.getItem('inventory_copy_box_states');
+      const saved = sessionStorage.getItem('inventory_copy_box_states');
       return saved ? JSON.parse(saved) : {};
     } catch (e) {
       return {};
     }
   });
 
-  // 2. Auto-Save: Jab bhi koi button copy ho, usay memory mein save karna
+  // 2. Auto-Save to Session: Refresh hone tak data yaad rakhega
   useEffect(() => {
-    localStorage.setItem('inventory_copy_box_states', JSON.stringify(lastCopiedContent));
+    sessionStorage.setItem('inventory_copy_box_states', JSON.stringify(lastCopiedContent));
   }, [lastCopiedContent]);
 
   if (!settings || settings.enabled === false) return null;
@@ -42,7 +43,6 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
     }
     navigator.clipboard.writeText(text).then(() => {
       toast(`Copied ${boxName} to clipboard`);
-      // Memory mein update karna
       setLastCopiedContent(prev => ({ ...prev, [id]: text }));
     }).catch(() => {
       toast(`Failed to copy ${boxName}`);
@@ -68,19 +68,17 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
       boxName = settings.box3Label || 'Combined Box';
     }
 
-    // Colors ki logic
-    const isCopied = lastCopiedContent[id] === value;
-    const isChanged = lastCopiedContent[id] !== undefined && lastCopiedContent[id] !== value;
+    const isCopied = lastCopiedContent[id] === value && value !== '';
+    const isChanged = lastCopiedContent[id] !== undefined && lastCopiedContent[id] !== value && value !== '';
     
     let wrapperClass = "flex-1 min-w-[200px] border rounded-md p-2 flex flex-col gap-1.5 shadow-sm transition-colors duration-200 ";
     
-    // Status ke mutabiq classes set karna
     if (isCopied) {
-      wrapperClass += "border-green-500 bg-green-50"; // Green color
+      wrapperClass += "border-green-500 bg-green-50";
     } else if (isChanged) {
-      wrapperClass += "border-red-500 bg-red-50";   // Red color
+      wrapperClass += "border-red-500 bg-red-50";
     } else {
-      wrapperClass += "border-[#d8d8d8] bg-white";   // Default white
+      wrapperClass += "border-[#d8d8d8] bg-white"; // Refresh par yahi default show hoga
     }
 
     return (
