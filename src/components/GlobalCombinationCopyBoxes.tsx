@@ -16,8 +16,7 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
 }) => {
   const { toast } = useToast();
 
-  // 1. Memory State: localStorage ki jagah sessionStorage use kiya hai
-  // Taake refresh karne par memory saaf ho jaye
+  // 1. localStorage ki jagah sessionStorage use karein
   const [lastCopiedContent, setLastCopiedContent] = useState<Record<string, string>>(() => {
     try {
       const saved = sessionStorage.getItem('inventory_copy_box_states');
@@ -27,7 +26,7 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
     }
   });
 
-  // 2. Auto-Save to Session: Refresh hone tak data yaad rakhega
+  // 2. Save karte waqt bhi sessionStorage use karein
   useEffect(() => {
     sessionStorage.setItem('inventory_copy_box_states', JSON.stringify(lastCopiedContent));
   }, [lastCopiedContent]);
@@ -68,6 +67,7 @@ export const GlobalCombinationCopyBoxes: React.FC<GlobalCombinationCopyBoxesProp
       boxName = settings.box3Label || 'Combined Box';
     }
 
+    // 3. Condition mein empty check add karein taake khali box white rahay
     const isCopied = lastCopiedContent[id] === value && value !== '';
     const isChanged = lastCopiedContent[id] !== undefined && lastCopiedContent[id] !== value && value !== '';
     
